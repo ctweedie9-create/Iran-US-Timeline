@@ -152,9 +152,49 @@ const TACTICAL_ACCOUNTS = [
 const ALL_FEEDS = [...RSS_FEEDS, ...GOVT_FEEDS, ...TACTICAL_FEEDS];
 
 // ── RELEVANCE PATTERNS ────────────────────────────────────────────────────
-const RELEVANCE     = /iran|hormuz|israel|nuclear|strait|tehran|khamenei|houthi|war|strike|ceasefire|missile|jcpoa|irgc|sanctions|enrichment|middle east|persian gulf|crude|brent|oil price|fuel|energy|opec|tanker|shipping|blockade|retaliat|diesel|petrol|liquid fuel/i;
-const GOVT_REL      = /iran|hormuz|fuel|diesel|petrol|oil|energy|middle east|israel|defence|military|security|sanctions|shipping|ceasefire|nuclear|parliament|senate|minister|dfat|foreign|strategic reserve|liquid fuel/i;
-const TACTICAL_REL  = /iran|hormuz|israel|idf|strike|missile|nuclear|ceasefire|centcom|crude|brent|oil|fuel|tanker|iaea|enrichment|drone|attack|retaliat|military|navy|warship|shipping/i;
+// ── RELEVANCE FILTERS ─────────────────────────────────────────────────────
+// Strategy: must match a PRIMARY anchor (Iran/conflict specific) OR
+// a COMMODITY term paired with a CONTEXT term (Middle East / Hormuz / Australia fuel)
+// This prevents "oil tanker Indonesia", "Venice Biennale", unrelated committee hearings etc.
+
+// PRIMARY anchors — these alone are enough to pass
+const PRIMARY = /\biran\b|hormuz|khamenei|irgc|jcpoa|\bteheran\b|\btehran\b|houthi|strait of hormuz|persian gulf|operation epic fury/i;
+
+// COMMODITY terms — only pass when paired with a CONTEXT term below
+const COMMODITY = /\bcrude\b|\bbrent\b|oil price|fuel security|liquid fuel|diesel supply|petrol price|fuel reserve|energy security|oil supply|fuel shortage/i;
+
+// CONTEXT terms that make a commodity story relevant
+const CONTEXT = /iran|israel|middle east|hormuz|australia.*fuel|fuel.*australia|gulf|houthi|sanctions|opec\+|persian/i;
+
+// CONFLICT terms — direct military/diplomatic events
+const CONFLICT = /\bceasefire\b|missile strike|air strike|ballistic missile|nuclear deal|nuclear weapon|enrichment|idf attack|us strike|israel.*attack|attack.*israel|naval blockade|warship.*gulf|gulf.*warship/i;
+
+// AUSTRALIA GOVT specific — must have fuel/energy/conflict anchor + Australian govt actor
+const GOVT_ANCHOR = /iran|hormuz|fuel security|liquid fuel|diesel|petrol.*price|fuel reserve|middle east|israel|ceasefire|strategic reserve|hormuz|energy security/i;
+const GOVT_ACTOR  = /australia|minister|dfat|albanese|penny wong|pat conroy|madeleine king|senate|aph|parliament.*fuel|fuel.*parliament|defence.*iran|iran.*defence/i;
+
+function isRelevant(title, desc, region) {
+  const text = (title + " " + desc).toLowerCase();
+  const fullText = title + " " + desc;
+
+  if (region === "government") {
+    // Must match a govt actor AND a conflict/fuel anchor
+    return GOVT_ANCHOR.test(fullText) && GOVT_ACTOR.test(fullText);
+  }
+
+  if (region === "tactical") {
+    // Tactical: must have a primary anchor or a direct conflict term
+    return PRIMARY.test(fullText) || CONFLICT.test(fullText) ||
+           (COMMODITY.test(fullText) && CONTEXT.test(fullText));
+  }
+
+  // Global / Australia / NSW:
+  // Pass if primary anchor present, OR conflict term present,
+  // OR commodity term WITH explicit context (not just "oil" alone)
+  return PRIMARY.test(fullText) ||
+         CONFLICT.test(fullText) ||
+         (COMMODITY.test(fullText) && CONTEXT.test(fullText));
+}
 
 const PROXY = "https://api.allorigins.win/get?url=";
 const REFRESH_MS = 3 * 60 * 1000;
@@ -179,10 +219,6 @@ const LIGHT = {
 function parseRSS(xml, feed) {
   try {
     const doc = new DOMParser().parseFromString(xml, "text/xml");
-    let pat = RELEVANCE;
-    if (feed.region === "government") pat = GOVT_REL;
-    if (feed.region === "tactical")   pat = TACTICAL_REL;
-
     return Array.from(doc.querySelectorAll("item")).slice(0, 12).reduce((acc, item) => {
       const title   = item.querySelector("title")?.textContent?.trim() || "";
       const desc    = (item.querySelector("description")?.textContent || "")
@@ -200,7 +236,7 @@ function parseRSS(xml, feed) {
 
       const dateStr = pubDate.toISOString().split("T")[0]; // YYYY-MM-DD for sorting
 
-      if (!pat.test(title + " " + desc)) return acc;
+      if (!isRelevant(title, desc, feed.region)) return acc;
 
       acc.push({
         id:       `rss_${feed.id}_${Date.now()}_${acc.length}`,
