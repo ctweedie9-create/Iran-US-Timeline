@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iran–US Conflict Intelligence Timeline</title>
+  <meta name="description" content="Live intelligence timeline tracking the Iran–US conflict. Auto-refreshing RSS feeds from global, Australian and NSW sources." />
+  <meta property="og:title" content="Iran–US Conflict Intelligence Timeline" />
+  <meta property="og:description" content="Live-updating conflict tracker with historical context and multi-source RSS feeds." />
+  <meta name="theme-color" content="#0a0a0e" />
+
+  <!-- React + Babel (no build step needed) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { background: #0a0a0e; color: #d4c5a0; font-family: 'IBM Plex Mono', 'Courier New', monospace; }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { width: 6px; background: #111; }
+    ::-webkit-scrollbar-thumb { background: #ff4444; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    // ============================================================
+    // RSS FEED CONFIGURATION
+    // ============================================================
+    const RSS_FEEDS = [
+      // GLOBAL
+      { id: "reuters_world",  label: "Reuters World",        url: "https://feeds.reuters.com/reuters/worldNews",                    region: "global",    type: "Wire" },
+      { id: "bbc_world",      label: "BBC World",            url: "https://feeds.bbci.co.uk/news/world/rss.xml",                    region: "global",    type: "Broadcast" },
+      { id: "aljazeera",      label: "Al Jazeera",           url: "https://www.aljazeera.com/xml/rss/all.xml",                      region: "global",    type: "Broadcast" },
+      { id: "guardian_world", label: "The Guardian World",   url: "https://www.theguardian.com/world/rss",                          region: "global",    type: "Press" },
+      { id: "ap_world",       label: "AP News",              url: "https://rsshub.app/apnews/topics/world-news",                    region: "global",    type: "Wire" },
+      { id: "cfr",            label: "CFR Conflict Tracker", url: "https://www.cfr.org/rss.xml",                                    region: "global",    type: "Think Tank" },
+      // AUSTRALIA
+      { id: "abc_aus",        label: "ABC Australia",        url: "https://www.abc.net.au/news/feed/51120/rss.xml",                  region: "australia", type: "Broadcast" },
+      { id: "smh",            label: "Sydney Morning Herald",url: "https://www.smh.com.au/rss/world.xml",                           region: "australia", type: "Press" },
+      { id: "the_australian", label: "The Australian",       url: "https://www.theaustralian.com.au/feed",                          region: "australia", type: "Press" },
+      // NSW
+      { id: "abc_nsw",        label: "ABC NSW",              url: "https://www.abc.net.au/news/feed/2942460/rss.xml",                region: "nsw",       type: "Broadcast" },
+      { id: "smh_nsw",        label: "SMH NSW",              url: "https://www.smh.com.au/rss/national.xml",                        region: "nsw",       type: "Press" },
+      { id: "daily_tele",     label: "Daily Telegraph NSW",  url: "https://www.dailytelegraph.com.au/feed",                         region: "nsw",       type: "Press" },
+    ];
+
+    const PROXY = "https://api.allorigins.win/get?url=";
+
+    const RELEVANCE_PATTERN = /iran|hormuz|israel|nuclear|strait|tehran|khamenei|houthi|war|strike|ceasefire|missile|jcpoa|irgc|sanctions|enrichment|epic fury|operation|middle east/i;
+
+    // ============================================================
+    // HISTORICAL SEED DATA
+    // ============================================================
+    const HISTORICAL_EVENTS = [
+      { id:"h001", date:"2018-05-08", title:"Trump Withdraws from JCPOA", summary:"US exits the 2015 Iran nuclear deal, reimposing full sanctions under a 'maximum pressure' strategy. Iran begins gradually violating the deal's enrichment limits in response.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h002", date:"2023-10-07", title:"Hamas Attacks Israel — Proxy Axis Mobilises", summary:"Hamas attacks Israel triggering the Gaza war. Iran-backed proxy network including Hezbollah, Houthis and Iraqi militias activates across the region.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h003", date:"2024-04-01", title:"Israeli Strike on Iranian Consulate, Damascus", summary:"Israel kills IRGC Quds Force commanders in a Damascus consulate strike. Iran vows retaliation and launches its first-ever direct attack on Israeli territory.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h004", date:"2024-04-13", title:"Iran Launches First Direct Attack on Israel", summary:"Iran fires over 300 drones and ballistic missiles at Israel — the first direct attack in the countries' history. Largely intercepted by Israeli, US, UK, and Jordanian forces.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h005", date:"2024-10-01", title:"Iran's Second Direct Strike on Israel", summary:"Iran launches approximately 180 ballistic missiles at Israel following the assassination of Hezbollah chief Nasrallah. Several Israeli airbases sustain damage.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h006", date:"2025-01-20", title:"Trump Returns to Office — Maximum Pressure Resumed", summary:"Trump's second term begins. He immediately re-escalates pressure on Iran, expanding sanctions and demanding Iran dismantle its nuclear program entirely.", region:"global", type:"Political", source:"Historical Record", sourceType:"Archive" },
+      { id:"h007", date:"2025-06-12", title:"IAEA Declares Iran in Violation of NPT", summary:"IAEA confirms Iran has 460kg of 60%-enriched uranium — enough for 9+ nuclear warheads. Iran announces a secret enrichment site, triggering immediate Israeli military planning.", region:"global", type:"Nuclear", source:"Historical Record", sourceType:"Archive" },
+      { id:"h008", date:"2025-06-13", title:"Israel Launches the Twelve-Day War", summary:"Israel strikes Iranian nuclear sites, missile factories, radar installations and air defences in a surprise multi-wave attack. Senior military figures and nuclear scientists are assassinated.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h009", date:"2025-06-22", title:"US Joins — Strikes 3 Iranian Nuclear Sites", summary:"US B-2 Spirit stealth bombers target Iran's most hardened underground facilities including Fordow. Iran retaliates by firing missiles at the US Al Udeid Air Base in Qatar.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h010", date:"2025-06-24", title:"Twelve-Day War Ceasefire Declared", summary:"Trump announces a ceasefire brokered under US pressure. Iran's air defence network is largely destroyed. Nuclear infrastructure heavily damaged. Khamenei survives the conflict.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h011", date:"2025-09-01", title:"UN Snapback Sanctions Reimposed on Iran", summary:"UK, France and Germany trigger the UN snapback mechanism, restoring all pre-JCPOA sanctions. Iranian rial collapses. Food shortages and unemployment spike sharply.", region:"global", type:"Economic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h012", date:"2025-12-28", title:"Nationwide Anti-Government Protests Erupt in Iran", summary:"Economic collapse and brutal repression trigger Iran's largest protests since 1979. Over 5 million Iranians across 100+ cities demand regime change.", region:"global", type:"Civil Unrest", source:"Historical Record", sourceType:"Archive" },
+      { id:"h013", date:"2026-01-08", title:"Iran Massacres Protesters — 30,000+ Killed", summary:"IRGC unleashes a brutal crackdown. Iranian Health Ministry officials estimate 30,000 dead. The longest internet blackout in history is imposed to suppress reporting.", region:"global", type:"Human Rights", source:"Historical Record", sourceType:"Archive" },
+      { id:"h014", date:"2026-02-06", title:"Indirect US–Iran Talks Open in Muscat", summary:"Oman mediates nuclear negotiations. Iran offers a temporary enrichment suspension. Talks stall over the location of Iran's existing uranium stockpile — the US insists on third-country transfer.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h015", date:"2026-02-24", title:"Trump State of the Union: Iran Restarted Nuclear Program", summary:"Trump claims Iran has restarted its nuclear weapons program and is developing missiles capable of striking the US mainland. Diplomatic channels described as near-collapse.", region:"global", type:"Political", source:"Historical Record", sourceType:"Archive" },
+      { id:"h016", date:"2026-02-27", title:"Mass Embassy Evacuations from Iran", summary:"US State Department declares Iran a state sponsor of wrongful detention. Embassies begin mass evacuations. War considered imminent by intelligence agencies.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h017", date:"2026-02-28", title:"🔴 OPERATION EPIC FURY LAUNCHED", summary:"US and Israel launch a joint massive strike. Khamenei is assassinated. B-2 bombers destroy ballistic missile sites. Iranian warships sunk. Strait of Hormuz immediately closed. The 2026 Iran War begins.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive", critical:true },
+      { id:"h018", date:"2026-03-01", title:"Iran Retaliates — Missiles Strike Tel Aviv and US Bases", summary:"Iran fires hundreds of ballistic missiles at Israel, US bases across Iraq, Qatar and the UAE. Houthi front in Yemen is reopened. Global oil prices spike to record highs.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h019", date:"2026-03-03", title:"US–Israeli Strikes Continue Across Tehran", summary:"Heavy bombardment of Tehran continues. Strikes reported on University Street and Jomhouri area. Iranian hospitals overwhelmed. Civilian casualties mount.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h020", date:"2026-03-06", title:"Trump Demands 'Unconditional Surrender'", summary:"Trump sets a March 21 deadline, threatening strikes on Iranian energy infrastructure and bridges. Iran appoints Mojtaba Khamenei as new Supreme Leader.", region:"global", type:"Political", source:"Historical Record", sourceType:"Archive" },
+      { id:"h021", date:"2026-03-11", title:"UN Security Council Resolution Passed", summary:"UNSC demands an end to attacks on Arab states and their civilian populations, and reaffirms the right of all vessels to transit the Strait of Hormuz.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h022", date:"2026-03-13", title:"US Launches Counter-Blockade of Strait of Hormuz", summary:"US Navy begins targeting all ships bound for Iranian ports. Shipping insurance rates rise 4–6x in one week. Global energy markets reach crisis levels.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h023", date:"2026-03-28", title:"Houthis Reopen Red Sea Front", summary:"Houthi forces launch missiles and drones toward Israel, opening a second major front. Threat of Bab el-Mandeb Strait closure raises further alarm for global shipping.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive" },
+      { id:"h024", date:"2026-04-07", title:"Conditional Ceasefire Declared — Pakistan Mediates", summary:"A temporary ceasefire is announced. Pakistan mediates talks. Control of the Strait of Hormuz and Iran's nuclear stockpile remain the central unresolved issues.", region:"global", type:"Diplomatic", source:"Historical Record", sourceType:"Archive" },
+      { id:"h025", date:"2026-05-05", title:"US Forces Strait of Hormuz — UAE Under Attack", summary:"US naval forces attempt to force open the Strait as UAE military infrastructure is struck by Iranian-aligned forces. Ceasefire severely tested.", region:"global", type:"Military", source:"Historical Record", sourceType:"Archive", critical:true },
+      // AUSTRALIA
+      { id:"a001", date:"2026-03-01", title:"Australia Issues 'Do Not Travel' Warning", summary:"DFAT issues highest-level travel warning for Iran, Israel, Lebanon, Yemen and parts of the UAE. Thousands of Australians register for emergency consular assistance.", region:"australia", type:"Government", source:"DFAT", sourceType:"Government" },
+      { id:"a002", date:"2026-03-03", title:"RAN Frigate Deployed to Persian Gulf Region", summary:"Australian government confirms a Royal Australian Navy frigate is deployed to support allied naval operations and protect Australian-flagged shipping interests.", region:"australia", type:"Military", source:"Dept. of Defence", sourceType:"Government" },
+      { id:"a003", date:"2026-03-10", title:"Fuel Prices Spike Across Australia — Hormuz Impact", summary:"Petrol prices reach record highs across NSW and Victoria as the Strait of Hormuz closure disrupts approximately 20% of global oil supply.", region:"nsw", type:"Economic", source:"ACCC / ABS", sourceType:"Government" },
+      { id:"a004", date:"2026-03-15", title:"NSW Government Activates Emergency Fuel Reserves", summary:"NSW Premier activates state strategic fuel reserve protocols. Price caps on essential transport corridors are under active consideration by Treasury.", region:"nsw", type:"Government", source:"NSW Premier's Office", sourceType:"Government" },
+      { id:"a005", date:"2026-04-02", title:"Australia Joins 7-Nation Hormuz Safety Coalition", summary:"Australia pledges support for freedom-of-navigation operations in the Strait of Hormuz alongside the UK, France, Japan, Canada, Germany and the UAE.", region:"australia", type:"Diplomatic", source:"DFAT", sourceType:"Government" },
+    ];
+
+    // ============================================================
+    // CONSTANTS
+    // ============================================================
+    const TYPE_COLORS = {
+      "Military":     { bg:"#7a1a1a", border:"#ff4444", text:"#ffaaaa" },
+      "Diplomatic":   { bg:"#1a2a5a", border:"#4488ff", text:"#aaccff" },
+      "Nuclear":      { bg:"#5a3000", border:"#ff8800", text:"#ffcc88" },
+      "Political":    { bg:"#3a1a5a", border:"#aa44ff", text:"#cc99ff" },
+      "Economic":     { bg:"#0a3a2a", border:"#22cc88", text:"#88ffcc" },
+      "Civil Unrest": { bg:"#5a2a0a", border:"#ff6633", text:"#ffbb88" },
+      "Human Rights": { bg:"#5a0a2a", border:"#ff3399", text:"#ff99cc" },
+      "Government":   { bg:"#0a2a3a", border:"#2299cc", text:"#88ccff" },
+      "Wire":         { bg:"#2a2a2a", border:"#888",    text:"#bbb" },
+      "Broadcast":    { bg:"#2a2a2a", border:"#aaa",    text:"#ccc" },
+      "Press":        { bg:"#2a2a2a", border:"#777",    text:"#bbb" },
+      "Think Tank":   { bg:"#1a2a2a", border:"#44aaaa", text:"#88dddd" },
+      "default":      { bg:"#1a1a1a", border:"#555",    text:"#888" },
+    };
+
+    const REGION_META = {
+      global:    { label:"🌐 Global",    color:"#4488ff" },
+      australia: { label:"🇦🇺 Australia", color:"#ffaa22" },
+      nsw:       { label:"📍 NSW",       color:"#22cc88" },
+    };
+
+    const REFRESH_INTERVAL = 3 * 60 * 1000; // 3 minutes
+
+    // ============================================================
+    // RSS PARSER
+    // ============================================================
+    function parseRSS(xmlText, feed) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, "text/xml");
+        const items = Array.from(doc.querySelectorAll("item"));
+        return items.slice(0, 8).reduce((acc, item) => {
+          const title = item.querySelector("title")?.textContent?.trim() || "";
+          const desc = (item.querySelector("description")?.textContent || "")
+            .replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 280);
+          const pubDate = item.querySelector("pubDate")?.textContent;
+          const link = item.querySelector("link")?.textContent?.trim() || "#";
+          const date = pubDate
+            ? new Date(pubDate).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0];
+          if (!RELEVANCE_PATTERN.test(title + " " + desc)) return acc;
+          acc.push({
+            id: `rss_${feed.id}_${Date.now()}_${acc.length}`,
+            date, title: title.slice(0, 120), summary: desc,
+            region: feed.region, type: feed.type,
+            source: feed.label, sourceType: feed.type,
+            link, live: true,
+          });
+          return acc;
+        }, []);
+      } catch { return []; }
+    }
+
+    // ============================================================
+    // COMPONENTS
+    // ============================================================
+    function StatusDot({ ok, loading }) {
+      if (loading) return <span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#ff8800",flexShrink:0}} />;
+      if (ok === null) return <span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#333",flexShrink:0}} />;
+      return <span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:ok?"#22cc66":"#ff4444",flexShrink:0}} />;
+    }
+
+    function PillButton({ active, onClick, children, accent }) {
+      return (
+        <button onClick={onClick} style={{
+          padding:"5px 14px", borderRadius:"2px", fontSize:"11px", letterSpacing:"1px",
+          border: active ? `1px solid ${accent||"#ff4444"}` : "1px solid #2a2a2a",
+          background: active ? `rgba(${accent ? hexToRgb(accent) : "255,68,68"},0.12)` : "rgba(255,255,255,0.02)",
+          color: active ? (accent||"#ff8888") : "#555",
+          cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s",
+        }}>{children}</button>
+      );
+    }
+
+    function hexToRgb(hex) {
+      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      return `${r},${g},${b}`;
+    }
+
+    function EventCard({ event, onToggle, expanded }) {
+      const tc = TYPE_COLORS[event.type] || TYPE_COLORS["default"];
+      const rm = REGION_META[event.region] || { label: event.region, color:"#666" };
+      const isCritical = event.critical;
+      const isLive = event.live;
+      return (
+        <div onClick={onToggle} style={{
+          display:"flex", gap:"14px", marginBottom:"2px", cursor:"pointer",
+          padding:"10px 14px 10px 10px",
+          background: expanded ? "rgba(255,255,255,0.03)" : isCritical ? "rgba(255,68,68,0.06)" : "transparent",
+          borderLeft: isCritical ? "3px solid #ff4444" : isLive ? "3px solid #ff8800" : "3px solid transparent",
+          transition:"all 0.15s",
+        }}>
+          {/* Date */}
+          <div style={{flexShrink:0, width:"82px", textAlign:"right", paddingTop:"1px"}}>
+            <div style={{fontSize:"10px", color:"#444", lineHeight:1.6}}>
+              {event.date.split("-").reverse().join("/")}
+            </div>
+            {isLive && (
+              <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:"4px",marginTop:"2px"}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:"#ff6600",display:"inline-block",animation:"pls 1.2s infinite"}} />
+                <span style={{fontSize:"8px",color:"#ff8833",letterSpacing:"1px"}}>LIVE</span>
+              </div>
+            )}
+          </div>
+          {/* Node */}
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0,width:18}}>
+            <div style={{
+              width:10, height:10, borderRadius:"50%", marginTop:3, flexShrink:0,
+              background: isCritical ? "#ff4444" : isLive ? "#ff8800" : "#2a2a2a",
+              border: `2px solid ${isCritical ? "#ff4444" : isLive ? "#ff8800" : "#444"}`,
+              boxShadow: isCritical ? "0 0 10px #ff444466" : "none",
+            }} />
+            <div style={{flex:1, width:1, background:"#1c1c22", marginTop:5, minHeight:16}} />
+          </div>
+          {/* Content */}
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"flex-start"}}>
+              <span style={{fontSize:"12px",fontWeight:600,color:isCritical?"#ff7777":isLive?"#ffaa44":"#c8b98a",flex:1,minWidth:"160px",lineHeight:1.4}}>
+                {event.title}
+              </span>
+              <div style={{display:"flex",gap:"4px",flexShrink:0,flexWrap:"wrap"}}>
+                <span style={{fontSize:"9px",padding:"2px 8px",background:tc.bg,border:`1px solid ${tc.border}33`,color:tc.text,letterSpacing:"0.5px",borderRadius:"2px"}}>
+                  {event.type}
+                </span>
+                <span style={{fontSize:"9px",padding:"2px 8px",background:"#111",border:"1px solid #2a2a2a",color:rm.color,letterSpacing:"0.5px",borderRadius:"2px"}}>
+                  {rm.label}
+                </span>
+              </div>
+            </div>
+            <div style={{fontSize:"11px",color:"#706050",marginTop:"5px",lineHeight:1.6}}>
+              {expanded ? event.summary : (event.summary.length > 160 ? event.summary.slice(0,160)+"…" : event.summary)}
+            </div>
+            <div style={{display:"flex",gap:"12px",marginTop:"5px",alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:"9px",color:"#3a3a3a",letterSpacing:"0.5px"}}>◈ {event.source}</span>
+              {event.link && event.link !== "#" && (
+                <a href={event.link} target="_blank" rel="noopener noreferrer"
+                  onClick={e=>e.stopPropagation()}
+                  style={{fontSize:"9px",color:"#3355aa",textDecoration:"none",letterSpacing:"0.5px"}}>
+                  → source ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // MAIN APP
+    // ============================================================
+    function App() {
+      const [liveEvents, setLiveEvents]   = useState([]);
+      const [feedStatus, setFeedStatus]   = useState({});
+      const [loading, setLoading]         = useState(false);
+      const [lastRefresh, setLastRefresh] = useState(null);
+      const [countdown, setCountdown]     = useState(180);
+      const [region, setRegion]           = useState("all");
+      const [typeFilter, setTypeFilter]   = useState("all");
+      const [search, setSearch]           = useState("");
+      const [expanded, setExpanded]       = useState(null);
+      const timerRef = useRef(null);
+      const cdRef    = useRef(null);
+
+      const fetchAll = useCallback(async () => {
+        setLoading(true);
+        const newItems = [], statuses = {};
+        await Promise.allSettled(RSS_FEEDS.map(async feed => {
+          try {
+            const r = await fetch(PROXY + encodeURIComponent(feed.url));
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const json = await r.json();
+            const items = parseRSS(json.contents, feed);
+            newItems.push(...items);
+            statuses[feed.id] = { ok:true, count:items.length };
+          } catch(e) {
+            statuses[feed.id] = { ok:false, err:e.message };
+          }
+        }));
+        setFeedStatus(p => ({...p,...statuses}));
+        if (newItems.length) {
+          setLiveEvents(prev => {
+            const seen = new Set(prev.map(e=>e.title));
+            const fresh = newItems.filter(e => !seen.has(e.title));
+            return [...fresh,...prev].slice(0,120);
+          });
+        }
+        setLastRefresh(new Date());
+        setLoading(false);
+        setCountdown(180);
+      }, []);
+
+      useEffect(() => {
+        fetchAll();
+        timerRef.current = setInterval(fetchAll, REFRESH_INTERVAL);
+        cdRef.current    = setInterval(() => setCountdown(c => Math.max(0,c-1)), 1000);
+        return () => { clearInterval(timerRef.current); clearInterval(cdRef.current); };
+      }, [fetchAll]);
+
+      const allEvents = [...liveEvents, ...HISTORICAL_EVENTS]
+        .sort((a,b) => new Date(b.date)-new Date(a.date));
+
+      const allTypes = [...new Set(allEvents.map(e=>e.type))].sort();
+
+      const filtered = allEvents.filter(e => {
+        if (region !== "all" && e.region !== region) return false;
+        if (typeFilter !== "all" && e.type !== typeFilter) return false;
+        if (search) {
+          const hay = `${e.title} ${e.summary} ${e.source}`.toLowerCase();
+          if (!hay.includes(search.toLowerCase())) return false;
+        }
+        return true;
+      });
+
+      const liveCount = liveEvents.length;
+      const okCount   = Object.values(feedStatus).filter(s=>s.ok).length;
+      const totalFeeds = RSS_FEEDS.length;
+
+      return (
+        <div style={{fontFamily:"'IBM Plex Mono','Courier New',monospace",background:"#0a0a0e",color:"#d4c5a0",minHeight:"100vh"}}>
+          <style>{`
+            @keyframes pls { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.5)} }
+            @keyframes glitch { 0%,94%,100%{text-shadow:none} 95%{text-shadow:2px 0 #ff4444,-2px 0 #4488ff} 97%{text-shadow:-2px 0 #ff4444,2px 0 #4488ff} }
+            @keyframes fadeSlide { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+            .evt{animation:fadeSlide .25s ease both}
+            .evthov:hover{background:rgba(255,255,255,0.025)!important;border-left-color:#444!important}
+            button:hover{opacity:.85}
+            input:focus{outline:none;border-color:#555!important}
+            select:focus{outline:none}
+            a:hover{color:#6699ff!important}
+          `}</style>
+
+          {/* ── HEADER ── */}
+          <div style={{background:"linear-gradient(180deg,#180808 0%,#0a0a0e 100%)",borderBottom:"1px solid #1e0808",padding:"20px 24px 0"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"12px"}}>
+              <div>
+                <h1 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(24px,5vw,42px)",letterSpacing:"4px",color:"#ff3333",lineHeight:1,animation:"glitch 10s infinite"}}>
+                  OPERATION EPIC FURY
+                </h1>
+                <div style={{fontSize:"9px",letterSpacing:"4px",color:"#444",marginTop:"5px",textTransform:"uppercase"}}>
+                  Iran–US Conflict Intelligence Timeline · Est. June 2025 · Updated Every 3 Min
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"5px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"7px"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:"#ff4444",display:"inline-block",animation:"pls 1.2s infinite"}} />
+                  <span style={{fontSize:"10px",color:"#ff6666",letterSpacing:"2px"}}>LIVE · {countdown}s</span>
+                </div>
+                <div style={{fontSize:"9px",color:"#333"}}>
+                  {okCount}/{totalFeeds} feeds · {liveCount} live · {HISTORICAL_EVENTS.length} archived
+                </div>
+                {lastRefresh && <div style={{fontSize:"9px",color:"#2a2a2a"}}>
+                  synced {lastRefresh.toLocaleTimeString("en-AU",{timeZone:"Australia/Sydney"})} AEST
+                </div>}
+              </div>
+            </div>
+
+            {/* Region tabs */}
+            <div style={{display:"flex",gap:"6px",marginTop:"16px",flexWrap:"wrap"}}>
+              {[["all","📡 All"],["global","🌐 Global"],["australia","🇦🇺 Australia"],["nsw","📍 NSW"]].map(([v,l])=>(
+                <PillButton key={v} active={region===v} onClick={()=>setRegion(v)}
+                  accent={v==="global"?"#4488ff":v==="australia"?"#ffaa22":v==="nsw"?"#22cc88":"#ff4444"}>
+                  {l}
+                </PillButton>
+              ))}
+              <button onClick={fetchAll} disabled={loading} style={{
+                marginLeft:"auto",padding:"5px 14px",borderRadius:"2px",fontSize:"10px",letterSpacing:"1px",
+                border:"1px solid #2a2a2a",background:loading?"rgba(255,136,0,0.08)":"rgba(255,255,255,0.02)",
+                color:loading?"#ff8800":"#555",cursor:loading?"wait":"pointer",fontFamily:"inherit",
+              }}>{loading?"⟳ FETCHING…":"⟳ REFRESH"}</button>
+            </div>
+
+            {/* Search + type */}
+            <div style={{display:"flex",gap:"8px",marginTop:"10px",paddingBottom:"14px",flexWrap:"wrap",alignItems:"center"}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search events…"
+                style={{background:"rgba(255,255,255,0.02)",border:"1px solid #2a2a2a",borderRadius:"2px",
+                  color:"#888",padding:"5px 12px",fontSize:"11px",width:"200px",fontFamily:"inherit"}} />
+              <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{
+                background:"#0d0d10",border:"1px solid #2a2a2a",borderRadius:"2px",
+                color:"#666",padding:"5px 10px",fontSize:"11px",fontFamily:"inherit",cursor:"pointer"}}>
+                <option value="all">All Types</option>
+                {allTypes.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+              <span style={{fontSize:"9px",color:"#2a2a2a"}}>{filtered.length} events</span>
+            </div>
+          </div>
+
+          {/* ── FEED STATUS STRIP ── */}
+          <div style={{background:"#080810",borderBottom:"1px solid #111",padding:"6px 24px",display:"flex",gap:"12px",flexWrap:"wrap",overflowX:"auto"}}>
+            {RSS_FEEDS.map(f => {
+              const s = feedStatus[f.id];
+              return (
+                <div key={f.id} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                  <StatusDot ok={s?.ok??null} loading={loading&&!s} />
+                  <span style={{fontSize:"9px",color:"#2e2e2e",whiteSpace:"nowrap",letterSpacing:"0.3px"}}>{f.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── TIMELINE ── */}
+          <div style={{maxWidth:"920px",margin:"0 auto",padding:"20px 12px 48px"}}>
+            {filtered.length === 0 && (
+              <div style={{textAlign:"center",color:"#222",padding:"80px 0",fontSize:"11px",letterSpacing:"3px"}}>
+                NO EVENTS MATCH CURRENT FILTERS
+              </div>
+            )}
+            {filtered.map((e,i)=>(
+              <div key={e.id} className="evt evthov" style={{animationDelay:`${Math.min(i,20)*0.03}s`}}>
+                <EventCard event={e} expanded={expanded===e.id} onToggle={()=>setExpanded(expanded===e.id?null:e.id)} />
+              </div>
+            ))}
+          </div>
+
+          {/* ── FOOTER ── */}
+          <div style={{borderTop:"1px solid #111",padding:"14px 24px",display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:"8px",background:"#080810"}}>
+            <div style={{fontSize:"8px",color:"#222",letterSpacing:"1px",lineHeight:1.8}}>
+              SOURCES: REUTERS · BBC · ABC AUSTRALIA · AL JAZEERA · AP · GUARDIAN · SMH · DAILY TELEGRAPH · DFAT · DOD<br/>
+              AUTO-REFRESH EVERY 3 MINUTES · CORS PROXY: ALLORIGINS.WIN · FOR MULTI-AGENCY USE
+            </div>
+            <div style={{fontSize:"8px",color:"#1a1a1a",letterSpacing:"1px",textAlign:"right",lineHeight:1.8}}>
+              SHAREABLE VIA URL · NO LOGIN REQUIRED<br/>
+              IRAN–US CONFLICT MONITOR · {new Date().getFullYear()}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
