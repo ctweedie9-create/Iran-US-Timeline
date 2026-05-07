@@ -21,181 +21,212 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 
-// ── AEDT TIME HELPERS ─────────────────────────────────────────────────────
-// Always display in Australia/Sydney timezone (AEST/AEDT auto)
-function toAEDT(dateInput) {
-  if (!dateInput) return null;
-  try {
-    const d = (dateInput instanceof Date) ? dateInput : new Date(dateInput);
-    if (isNaN(d)) return null;
-    return d;
-  } catch { return null; }
-}
-
-function formatAEDT(dateInput) {
-  const d = toAEDT(dateInput);
+// ── TIME HELPERS ──────────────────────────────────────────────────────────
+function formatAEDT(d) {
   if (!d) return "—";
   try {
-    return d.toLocaleString("en-AU", {
-      timeZone: "Australia/Sydney",
-      day:   "2-digit",
-      month: "2-digit",
-      year:  "2-digit",
-      hour:  "numeric",
-      minute:"2-digit",
-      hour12: true,
-    }).replace(",", "");
+    return new Date(d).toLocaleString("en-AU", {
+      timeZone:"Australia/Sydney", day:"2-digit", month:"2-digit",
+      year:"2-digit", hour:"numeric", minute:"2-digit", hour12:true,
+    }).replace(",","");
   } catch { return "—"; }
 }
-
-function formatAEDTTimeOnly(dateInput) {
-  const d = toAEDT(dateInput);
+function formatTimeOnly(d) {
   if (!d) return "";
   try {
-    return d.toLocaleString("en-AU", {
-      timeZone: "Australia/Sydney",
-      hour:  "numeric",
-      minute:"2-digit",
-      hour12: true,
+    return new Date(d).toLocaleString("en-AU", {
+      timeZone:"Australia/Sydney", hour:"numeric", minute:"2-digit", hour12:true,
     });
   } catch { return ""; }
 }
-
-function formatDateOnly(dateStr) {
-  // For historical events that only have a date string YYYY-MM-DD
-  if (!dateStr) return "—";
-  const parts = dateStr.split("-");
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[2].length===4?parts[0].slice(2):parts[0]}`;
-  return dateStr;
+function formatDateShort(str) {
+  if (!str) return "—";
+  const p = str.split("-");
+  return p.length===3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : str;
 }
 
+// ── SOURCE TYPE BADGES ────────────────────────────────────────────────────
+const SOURCE_COLORS = {
+  "Wire":        "#e8a020",
+  "Broadcast":   "#4488ff",
+  "Press":       "#aaaaaa",
+  "Think Tank":  "#aa66ff",
+  "Ministerial": "#22ccaa",
+  "Parliament":  "#22ccaa",
+  "Department":  "#22ccaa",
+  "Advisory":    "#ff8844",
+  "Regulatory":  "#ff8844",
+  "Research":    "#aa88ff",
+  "Aggregated":  "#888888",
+  "Energy":      "#ff8800",
+  "Nuclear":     "#ff4444",
+  "Military":    "#cc4444",
+  "Diplomatic":  "#4488ff",
+  "Government":  "#22ccaa",
+};
+
 // ── RSS FEEDS ─────────────────────────────────────────────────────────────
-const RSS_FEEDS = [
-  // GLOBAL
-  { id:"reuters",      label:"Reuters",            url:"https://feeds.reuters.com/reuters/worldNews",                              region:"global",     type:"Wire" },
-  { id:"ap",           label:"AP News",            url:"https://rsshub.app/apnews/topics/world-news",                             region:"global",     type:"Wire" },
-  { id:"bbc",          label:"BBC News",           url:"https://feeds.bbci.co.uk/news/world/rss.xml",                             region:"global",     type:"Broadcast" },
-  { id:"aljazeera",    label:"Al Jazeera",         url:"https://www.aljazeera.com/xml/rss/all.xml",                               region:"global",     type:"Broadcast" },
-  { id:"guardian",     label:"The Guardian",       url:"https://www.theguardian.com/world/rss",                                   region:"global",     type:"Press" },
-  { id:"dw",           label:"Deutsche Welle",     url:"https://rss.dw.com/rdf/rss-en-world",                                     region:"global",     type:"Broadcast" },
-  { id:"france24",     label:"France 24",          url:"https://www.france24.com/en/rss",                                         region:"global",     type:"Broadcast" },
-  { id:"euronews",     label:"Euronews",           url:"https://feeds.feedburner.com/euronews/en/news/",                          region:"global",     type:"Broadcast" },
-  { id:"ft",           label:"Financial Times",    url:"https://www.ft.com/world?format=rss",                                     region:"global",     type:"Press" },
-  { id:"cfr",          label:"CFR",                url:"https://www.cfr.org/rss.xml",                                             region:"global",     type:"Think Tank" },
-  // AUSTRALIA
-  { id:"abc_aus",      label:"ABC News",           url:"https://www.abc.net.au/news/feed/51120/rss.xml",                          region:"australia",  type:"Broadcast" },
-  { id:"smh",          label:"SMH",                url:"https://www.smh.com.au/rss/world.xml",                                    region:"australia",  type:"Press" },
-  { id:"news_au",      label:"news.com.au",        url:"https://www.news.com.au/content-feeds/latest-news-world/",               region:"australia",  type:"Press" },
-  { id:"nine",         label:"9News",              url:"https://www.9news.com.au/rss",                                            region:"australia",  type:"Broadcast" },
-  { id:"seven",        label:"7NEWS",              url:"https://7news.com.au/news/world.rss",                                     region:"australia",  type:"Broadcast" },
-  { id:"perthnow",     label:"PerthNow",           url:"https://www.perthnow.com.au/feed",                                        region:"australia",  type:"Press" },
-  { id:"westaustralian",label:"The West Australian",url:"https://thewest.com.au/feed",                                            region:"australia",  type:"Press" },
+const GLOBAL_FEEDS = [
+  { id:"reuters",    label:"Reuters",          url:"https://feeds.reuters.com/reuters/worldNews",              region:"global", type:"Wire" },
+  { id:"ap",         label:"AP News",          url:"https://rsshub.app/apnews/topics/world-news",              region:"global", type:"Wire" },
+  { id:"bbc",        label:"BBC News",         url:"https://feeds.bbci.co.uk/news/world/rss.xml",              region:"global", type:"Broadcast" },
+  { id:"aljazeera",  label:"Al Jazeera",       url:"https://www.aljazeera.com/xml/rss/all.xml",                region:"global", type:"Broadcast" },
+  { id:"guardian",   label:"The Guardian",     url:"https://www.theguardian.com/world/rss",                    region:"global", type:"Press" },
+  { id:"dw",         label:"Deutsche Welle",   url:"https://rss.dw.com/rdf/rss-en-world",                     region:"global", type:"Broadcast" },
+  { id:"france24",   label:"France 24",        url:"https://www.france24.com/en/rss",                         region:"global", type:"Broadcast" },
+  { id:"euronews",   label:"Euronews",         url:"https://feeds.feedburner.com/euronews/en/news/",           region:"global", type:"Broadcast" },
+  { id:"ft",         label:"Financial Times",  url:"https://www.ft.com/world?format=rss",                     region:"global", type:"Press" },
+  { id:"cfr",        label:"CFR",              url:"https://www.cfr.org/rss.xml",                             region:"global", type:"Think Tank" },
+];
+
+// Australia — media + government merged
+const AUSTRALIA_FEEDS = [
+  // Media
+  { id:"abc_aus",    label:"ABC News",            url:"https://www.abc.net.au/news/feed/51120/rss.xml",                              region:"australia", type:"Broadcast",   isGovt:false },
+  { id:"smh",        label:"SMH",                 url:"https://www.smh.com.au/rss/world.xml",                                        region:"australia", type:"Press",       isGovt:false },
+  { id:"news_au",    label:"news.com.au",         url:"https://www.news.com.au/content-feeds/latest-news-world/",                   region:"australia", type:"Press",       isGovt:false },
+  { id:"nine",       label:"9News",               url:"https://www.9news.com.au/rss",                                                region:"australia", type:"Broadcast",   isGovt:false },
+  { id:"seven",      label:"7NEWS",               url:"https://7news.com.au/news/world.rss",                                         region:"australia", type:"Broadcast",   isGovt:false },
+  { id:"perthnow",   label:"PerthNow",            url:"https://www.perthnow.com.au/feed",                                            region:"australia", type:"Press",       isGovt:false },
+  { id:"westaustralian", label:"The West Australian", url:"https://thewest.com.au/feed",                                             region:"australia", type:"Press",       isGovt:false },
+  // Government / Official — merged in
+  { id:"g_dfat",     label:"DFAT",                url:"https://www.dfat.gov.au/news/rss.xml",                                        region:"australia", type:"Department",  isGovt:true },
+  { id:"g_smart",    label:"Smartraveller",       url:"https://www.smartraveller.gov.au/news-and-advice/rss",                        region:"australia", type:"Advisory",    isGovt:true },
+  { id:"g_defence",  label:"Dept of Defence",     url:"https://www.defence.gov.au/news-events/releases/rss",                         region:"australia", type:"Department",  isGovt:true },
+  { id:"g_accc",     label:"ACCC",                url:"https://www.accc.gov.au/media-release/feed",                                  region:"australia", type:"Regulatory",  isGovt:true },
+  { id:"g_senate",   label:"Senate Inquiries",    url:"https://www.aph.gov.au/senate/rss/new_inquiries",                             region:"australia", type:"Parliament",  isGovt:true },
+  { id:"g_house",    label:"House Releases",      url:"https://www.aph.gov.au/house/rss/media_releases",                             region:"australia", type:"Parliament",  isGovt:true },
+  { id:"g_flagpost", label:"Parliamentary Library",url:"https://www.aph.gov.au/About_Parliament/Parliamentary_departments/Parliamentary_Library/Research/FlagPost/Blog_entries", region:"australia", type:"Research", isGovt:true },
+  { id:"g_foreign",  label:"Foreign Affairs Min", url:"https://news.google.com/rss/search?q=penny+wong+foreign+minister+iran+fuel+hormuz&hl=en-AU&gl=AU&ceid=AU:en",           region:"australia", type:"Ministerial", isGovt:true },
+  { id:"g_pm",       label:"Prime Minister",      url:"https://news.google.com/rss/search?q=albanese+prime+minister+iran+fuel+hormuz+australia&hl=en-AU&gl=AU&ceid=AU:en",    region:"australia", type:"Ministerial", isGovt:true },
+  { id:"g_energy",   label:"Energy Min",          url:"https://news.google.com/rss/search?q=australia+energy+resources+fuel+security+madeleine+king&hl=en-AU&gl=AU&ceid=AU:en", region:"australia", type:"Ministerial", isGovt:true },
+  { id:"g_aus_fuel", label:"AUS Fuel Policy",     url:"https://news.google.com/rss/search?q=australia+fuel+security+diesel+liquid+fuel+2026&hl=en-AU&gl=AU&ceid=AU:en",       region:"australia", type:"Aggregated",  isGovt:true },
+];
+
+// States — each state has its own feeds + state-specific keyword
+const STATE_FEEDS = [
   // NSW
-  { id:"abc_nsw",      label:"ABC NSW",            url:"https://www.abc.net.au/news/feed/2942460/rss.xml",                        region:"nsw",        type:"Broadcast" },
-  { id:"smh_nsw",      label:"SMH NSW",            url:"https://www.smh.com.au/rss/national.xml",                                 region:"nsw",        type:"Press" },
-  { id:"daily_tele",   label:"Daily Telegraph",    url:"https://www.dailytelegraph.com.au/feed",                                  region:"nsw",        type:"Press" },
-  { id:"nine_nsw",     label:"9News NSW",          url:"https://www.9news.com.au/rss",                                            region:"nsw",        type:"Broadcast" },
+  { id:"s_abc_nsw",   label:"ABC NSW",           url:"https://www.abc.net.au/news/feed/2942460/rss.xml",           state:"nsw",  type:"Broadcast" },
+  { id:"s_smh",       label:"SMH",               url:"https://www.smh.com.au/rss/national.xml",                    state:"nsw",  type:"Press" },
+  { id:"s_tele",      label:"Daily Telegraph",   url:"https://www.dailytelegraph.com.au/feed",                     state:"nsw",  type:"Press" },
+  { id:"s_nsw_gov",   label:"NSW Gov",           url:"https://news.google.com/rss/search?q=NSW+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"nsw", type:"Government" },
+  // VIC
+  { id:"s_abc_vic",   label:"ABC Victoria",      url:"https://www.abc.net.au/news/feed/2942402/rss.xml",           state:"vic",  type:"Broadcast" },
+  { id:"s_age",       label:"The Age",           url:"https://www.theage.com.au/rss/national.xml",                 state:"vic",  type:"Press" },
+  { id:"s_vic_gov",   label:"VIC Gov",           url:"https://news.google.com/rss/search?q=victoria+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"vic", type:"Government" },
+  // QLD
+  { id:"s_abc_qld",   label:"ABC Queensland",    url:"https://www.abc.net.au/news/feed/2942482/rss.xml",           state:"qld",  type:"Broadcast" },
+  { id:"s_courier",   label:"Courier Mail",      url:"https://www.couriermail.com.au/feed",                        state:"qld",  type:"Press" },
+  { id:"s_qld_gov",   label:"QLD Gov",           url:"https://news.google.com/rss/search?q=queensland+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"qld", type:"Government" },
+  // WA
+  { id:"s_abc_wa",    label:"ABC WA",            url:"https://www.abc.net.au/news/feed/2942384/rss.xml",           state:"wa",   type:"Broadcast" },
+  { id:"s_perthnow",  label:"PerthNow",          url:"https://www.perthnow.com.au/feed",                           state:"wa",   type:"Press" },
+  { id:"s_west",      label:"The West Australian",url:"https://thewest.com.au/feed",                               state:"wa",   type:"Press" },
+  { id:"s_wa_gov",    label:"WA Gov",            url:"https://news.google.com/rss/search?q=western+australia+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"wa", type:"Government" },
+  // SA
+  { id:"s_abc_sa",    label:"ABC SA",            url:"https://www.abc.net.au/news/feed/2942462/rss.xml",           state:"sa",   type:"Broadcast" },
+  { id:"s_advertiser",label:"The Advertiser",    url:"https://www.adelaidenow.com.au/feed",                        state:"sa",   type:"Press" },
+  { id:"s_sa_gov",    label:"SA Gov",            url:"https://news.google.com/rss/search?q=south+australia+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"sa", type:"Government" },
+  // ACT
+  { id:"s_abc_act",   label:"ABC ACT",           url:"https://www.abc.net.au/news/feed/2942444/rss.xml",           state:"act",  type:"Broadcast" },
+  { id:"s_canberratimes",label:"Canberra Times", url:"https://www.canberratimes.com.au/rss.xml",                   state:"act",  type:"Press" },
+  { id:"s_act_gov",   label:"ACT Gov",           url:"https://news.google.com/rss/search?q=ACT+canberra+government+fuel+energy+iran&hl=en-AU&gl=AU&ceid=AU:en", state:"act", type:"Government" },
+  // TAS
+  { id:"s_abc_tas",   label:"ABC Tasmania",      url:"https://www.abc.net.au/news/feed/2942468/rss.xml",           state:"tas",  type:"Broadcast" },
+  { id:"s_mercury",   label:"The Mercury",       url:"https://www.themercury.com.au/feed",                         state:"tas",  type:"Press" },
+  { id:"s_tas_gov",   label:"TAS Gov",           url:"https://news.google.com/rss/search?q=tasmania+government+fuel+energy+iran+hormuz&hl=en-AU&gl=AU&ceid=AU:en", state:"tas", type:"Government" },
+  // NT
+  { id:"s_abc_nt",    label:"ABC NT",            url:"https://www.abc.net.au/news/feed/2942474/rss.xml",           state:"nt",   type:"Broadcast" },
+  { id:"s_ntnews",    label:"NT News",           url:"https://www.ntnews.com.au/feed",                             state:"nt",   type:"Press" },
+  { id:"s_nt_gov",    label:"NT Gov",            url:"https://news.google.com/rss/search?q=northern+territory+government+fuel+energy+iran&hl=en-AU&gl=AU&ceid=AU:en", state:"nt", type:"Government" },
 ];
 
-// ── GOVERNMENT FEEDS ──────────────────────────────────────────────────────
-const GOVT_FEEDS = [
-  // Parliament of Australia — confirmed RSS
-  { id:"g_senate_inquiries", label:"Senate New Inquiries",        url:"https://www.aph.gov.au/senate/rss/new_inquiries",                                                                                    region:"government", type:"Parliament" },
-  { id:"g_senate_reports",   label:"Senate Committee Reports",    url:"https://www.aph.gov.au/senate/rss/reports",                                                                                          region:"government", type:"Parliament" },
-  { id:"g_house_releases",   label:"House Media Releases",        url:"https://www.aph.gov.au/house/rss/media_releases",                                                                                    region:"government", type:"Parliament" },
-  { id:"g_house_inquiries",  label:"House Inquiries",             url:"https://www.aph.gov.au/house/rss/house_inquiries",                                                                                   region:"government", type:"Parliament" },
-  { id:"g_flagpost",         label:"Parliamentary Library",       url:"https://www.aph.gov.au/About_Parliament/Parliamentary_departments/Parliamentary_Library/Research/FlagPost/Blog_entries",            region:"government", type:"Research" },
-  // Ministerial — via Google News RSS (bypasses robots.txt, aggregates all ministerial releases)
-  { id:"g_foreign",          label:"Foreign Affairs Minister",    url:"https://news.google.com/rss/search?q=penny+wong+foreign+minister+australia&hl=en-AU&gl=AU&ceid=AU:en",                             region:"government", type:"Ministerial" },
-  { id:"g_defence",          label:"Defence Minister",            url:"https://news.google.com/rss/search?q=australia+defence+minister+pat+conroy+military&hl=en-AU&gl=AU&ceid=AU:en",                   region:"government", type:"Ministerial" },
-  { id:"g_energy",           label:"Energy & Resources Minister", url:"https://news.google.com/rss/search?q=australia+energy+resources+minister+madeleine+king+fuel&hl=en-AU&gl=AU&ceid=AU:en",          region:"government", type:"Ministerial" },
-  { id:"g_pm",               label:"Prime Minister",              url:"https://news.google.com/rss/search?q=albanese+prime+minister+australia+iran+fuel+hormuz&hl=en-AU&gl=AU&ceid=AU:en",               region:"government", type:"Ministerial" },
-  // Departmental direct RSS
-  { id:"g_dfat",             label:"DFAT",                        url:"https://www.dfat.gov.au/news/rss.xml",                                                                                               region:"government", type:"Department" },
-  { id:"g_smartraveller",    label:"Smartraveller Advisories",    url:"https://www.smartraveller.gov.au/news-and-advice/rss",                                                                               region:"government", type:"Advisory" },
-  { id:"g_defence_dept",     label:"Dept of Defence",             url:"https://www.defence.gov.au/news-events/releases/rss",                                                                                region:"government", type:"Department" },
-  { id:"g_accc",             label:"ACCC (Fuel)",                 url:"https://www.accc.gov.au/media-release/feed",                                                                                         region:"government", type:"Regulatory" },
-  { id:"g_industry",         label:"Industry & Resources",        url:"https://www.industry.gov.au/news/rss",                                                                                               region:"government", type:"Department" },
-  // Google News aggregated parliamentary/policy queries
-  { id:"g_aus_iran",         label:"Google: Aus + Iran/Fuel",     url:"https://news.google.com/rss/search?q=australia+iran+fuel+hormuz+parliament&hl=en-AU&gl=AU&ceid=AU:en",                            region:"government", type:"Aggregated" },
-  { id:"g_aus_fuel_policy",  label:"Google: Aus Fuel Policy",     url:"https://news.google.com/rss/search?q=australia+fuel+security+diesel+petrol+policy+2026&hl=en-AU&gl=AU&ceid=AU:en",               region:"government", type:"Aggregated" },
-  { id:"g_nsw_energy",       label:"Google: NSW Energy",          url:"https://news.google.com/rss/search?q=NSW+fuel+energy+price+parliament+2026&hl=en-AU&gl=AU&ceid=AU:en",                            region:"government", type:"Aggregated" },
-  // ParlInfo search — Iran/fuel/Hormuz related research
-  { id:"g_parlinfo",         label:"ParlInfo: Iran/Fuel research", url:"https://parlinfo.aph.gov.au/parlInfo/feeds/rss.w3p;adv=yes;orderBy=date-eFirst;page=0;query=iran%20OR%20fuel%20OR%20hormuz;resCount=20", region:"government", type:"Research" },
-];
-
-// ── TACTICAL FEEDS ────────────────────────────────────────────────────────
 const TACTICAL_FEEDS = [
-  { id:"t_oilprice",    label:"OilPrice.com",           url:"https://oilprice.com/rss/main",                                                                                    region:"tactical",   type:"Energy" },
-  { id:"t_iaea",        label:"IAEA News",              url:"https://www.iaea.org/feeds/topstories.xml",                                                                        region:"tactical",   type:"Nuclear" },
-  { id:"t_un_me",       label:"UN News Middle East",    url:"https://news.un.org/feed/subscribe/en/news/region/middle-east/feed/rss.xml",                                       region:"tactical",   type:"Diplomatic" },
-  { id:"t_centcom",     label:"CENTCOM",                url:"https://www.centcom.mil/RSS/",                                                                                      region:"tactical",   type:"Military" },
-  { id:"t_defense",     label:"US Dept of Defense",     url:"https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=10",                          region:"tactical",   type:"Military" },
-  { id:"t_bbc_me",      label:"BBC Middle East",        url:"https://feeds.bbci.co.uk/news/world/middle_east/rss.xml",                                                          region:"tactical",   type:"Broadcast" },
-  { id:"t_guardian_me", label:"Guardian Middle East",   url:"https://www.theguardian.com/world/middleeast/rss",                                                                  region:"tactical",   type:"Press" },
-  { id:"t_reuters_e",   label:"Reuters Commodities",    url:"https://feeds.reuters.com/reuters/companyNews",                                                                     region:"tactical",   type:"Energy" },
+  { id:"t_oilprice",    label:"OilPrice.com",        url:"https://oilprice.com/rss/main",                                                    region:"tactical", type:"Energy" },
+  { id:"t_iaea",        label:"IAEA",                url:"https://www.iaea.org/feeds/topstories.xml",                                        region:"tactical", type:"Nuclear" },
+  { id:"t_un_me",       label:"UN Middle East",      url:"https://news.un.org/feed/subscribe/en/news/region/middle-east/feed/rss.xml",        region:"tactical", type:"Diplomatic" },
+  { id:"t_centcom",     label:"CENTCOM",             url:"https://www.centcom.mil/RSS/",                                                      region:"tactical", type:"Military" },
+  { id:"t_defense",     label:"US DoD",              url:"https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=10", region:"tactical", type:"Military" },
+  { id:"t_bbc_me",      label:"BBC Middle East",     url:"https://feeds.bbci.co.uk/news/world/middle_east/rss.xml",                          region:"tactical", type:"Broadcast" },
+  { id:"t_guardian_me", label:"Guardian Middle East",url:"https://www.theguardian.com/world/middleeast/rss",                                 region:"tactical", type:"Press" },
+  { id:"t_reuters_e",   label:"Reuters Commodities", url:"https://feeds.reuters.com/reuters/companyNews",                                    region:"tactical", type:"Energy" },
 ];
 
 const TACTICAL_ACCOUNTS = [
-  { handle:"@IDFSpokesperson", desc:"Israel Defense Forces official",          url:"https://twitter.com/IDFSpokesperson" },
-  { handle:"@CENTCOM",         desc:"US Central Command official",             url:"https://twitter.com/CENTCOM" },
-  { handle:"@IAEAorg",         desc:"International Atomic Energy Agency",      url:"https://twitter.com/IAEAorg" },
-  { handle:"@UN_News_Centre",  desc:"UN News official",                        url:"https://twitter.com/UN_News_Centre" },
-  { handle:"@OilPriceDotCom",  desc:"Oil price and energy markets",            url:"https://twitter.com/OilPriceDotCom" },
-  { handle:"@RALLEEMilitary",  desc:"Middle East military tracker",            url:"https://twitter.com/RALLEEMilitary" },
-  { handle:"@WarMonitor3",     desc:"Conflict monitoring aggregator",          url:"https://twitter.com/WarMonitor3" },
-  { handle:"@MENAconflict",    desc:"Middle East & North Africa tracker",      url:"https://twitter.com/MENAconflict" },
-  { handle:"@PersianGulfNews", desc:"Persian Gulf regional news",              url:"https://twitter.com/PersianGulfNews" },
-  { handle:"@HormuzWatch",     desc:"Strait of Hormuz shipping tracker",       url:"https://twitter.com/HormuzWatch" },
+  { handle:"@IDFSpokesperson", desc:"Israel Defense Forces official",       url:"https://twitter.com/IDFSpokesperson" },
+  { handle:"@CENTCOM",         desc:"US Central Command",                   url:"https://twitter.com/CENTCOM" },
+  { handle:"@IAEAorg",         desc:"International Atomic Energy Agency",   url:"https://twitter.com/IAEAorg" },
+  { handle:"@UN_News_Centre",  desc:"UN News",                              url:"https://twitter.com/UN_News_Centre" },
+  { handle:"@OilPriceDotCom",  desc:"Oil price and energy markets",         url:"https://twitter.com/OilPriceDotCom" },
+  { handle:"@RALLEEMilitary",  desc:"Middle East military tracker",         url:"https://twitter.com/RALLEEMilitary" },
+  { handle:"@WarMonitor3",     desc:"Conflict monitoring aggregator",       url:"https://twitter.com/WarMonitor3" },
+  { handle:"@MENAconflict",    desc:"MENA conflict tracker",               url:"https://twitter.com/MENAconflict" },
+  { handle:"@PersianGulfNews", desc:"Persian Gulf regional news",           url:"https://twitter.com/PersianGulfNews" },
+  { handle:"@HormuzWatch",     desc:"Strait of Hormuz shipping",           url:"https://twitter.com/HormuzWatch" },
 ];
 
-const ALL_FEEDS = [...RSS_FEEDS, ...GOVT_FEEDS, ...TACTICAL_FEEDS];
+const ALL_FEEDS = [...GLOBAL_FEEDS, ...AUSTRALIA_FEEDS, ...STATE_FEEDS, ...TACTICAL_FEEDS];
 
-// ── RELEVANCE PATTERNS ────────────────────────────────────────────────────
+const STATE_META = {
+  nsw: { label:"NSW",      full:"New South Wales",       flag:"🏙️" },
+  vic: { label:"VIC",      full:"Victoria",              flag:"🏗️" },
+  qld: { label:"QLD",      full:"Queensland",            flag:"☀️" },
+  wa:  { label:"WA",       full:"Western Australia",     flag:"🌊" },
+  sa:  { label:"SA",       full:"South Australia",       flag:"🍷" },
+  act: { label:"ACT",      full:"Capital Territory",     flag:"🏛️" },
+  tas: { label:"TAS",      full:"Tasmania",              flag:"🌿" },
+  nt:  { label:"NT",       full:"Northern Territory",    flag:"🌵" },
+};
+
+// State-specific keyword anchors — must mention the state AND conflict/fuel
+const STATE_KEYWORDS = {
+  nsw: /\b(nsw|new south wales|sydney|wollongong|newcastle)\b/i,
+  vic: /\b(victoria|vic\b|melbourne|geelong|ballarat)\b/i,
+  qld: /\b(queensland|qld\b|brisbane|cairns|townsville|gold coast)\b/i,
+  wa:  /\b(western australia|\bwa\b|perth|fremantle|broome|pilbara)\b/i,
+  sa:  /\b(south australia|\bsa\b|adelaide|port augusta)\b/i,
+  act: /\b(act\b|canberra|australian capital territory)\b/i,
+  tas: /\b(tasmania|\btas\b|hobart|launceston)\b/i,
+  nt:  /\b(northern territory|\bnt\b|darwin|alice springs|katherine)\b/i,
+};
+
 // ── RELEVANCE FILTERS ─────────────────────────────────────────────────────
-// Strategy: must match a PRIMARY anchor (Iran/conflict specific) OR
-// a COMMODITY term paired with a CONTEXT term (Middle East / Hormuz / Australia fuel)
-// This prevents "oil tanker Indonesia", "Venice Biennale", unrelated committee hearings etc.
-
-// PRIMARY anchors — these alone are enough to pass
-const PRIMARY = /\biran\b|hormuz|khamenei|irgc|jcpoa|\bteheran\b|\btehran\b|houthi|strait of hormuz|persian gulf|operation epic fury/i;
-
-// COMMODITY terms — only pass when paired with a CONTEXT term below
-const COMMODITY = /\bcrude\b|\bbrent\b|oil price|fuel security|liquid fuel|diesel supply|petrol price|fuel reserve|energy security|oil supply|fuel shortage/i;
-
-// CONTEXT terms that make a commodity story relevant
-const CONTEXT = /iran|israel|middle east|hormuz|australia.*fuel|fuel.*australia|gulf|houthi|sanctions|opec\+|persian/i;
-
-// CONFLICT terms — direct military/diplomatic events
-const CONFLICT = /\bceasefire\b|missile strike|air strike|ballistic missile|nuclear deal|nuclear weapon|enrichment|idf attack|us strike|israel.*attack|attack.*israel|naval blockade|warship.*gulf|gulf.*warship/i;
-
-// AUSTRALIA GOVT specific — must have fuel/energy/conflict anchor + Australian govt actor
-const GOVT_ANCHOR = /iran|hormuz|fuel security|liquid fuel|diesel|petrol.*price|fuel reserve|middle east|israel|ceasefire|strategic reserve|hormuz|energy security/i;
+const PRIMARY     = /\biran\b|hormuz|khamenei|irgc|jcpoa|\btehran\b|houthi|strait of hormuz|persian gulf|operation epic fury/i;
+const COMMODITY   = /\bcrude\b|\bbrent\b|oil price|fuel security|liquid fuel|diesel supply|petrol price|fuel reserve|energy security|oil supply|fuel shortage/i;
+const CONTEXT     = /iran|israel|middle east|hormuz|australia.*fuel|fuel.*australia|gulf|houthi|sanctions|persian/i;
+const CONFLICT    = /\bceasefire\b|missile strike|air strike|ballistic missile|nuclear deal|nuclear weapon|enrichment|idf attack|us strike|israel.*attack|attack.*israel|naval blockade|warship.*gulf|gulf.*warship/i;
+const GOVT_ANCHOR = /iran|hormuz|fuel security|liquid fuel|diesel|petrol.*price|fuel reserve|middle east|israel|ceasefire|strategic reserve|energy security/i;
 const GOVT_ACTOR  = /australia|minister|dfat|albanese|penny wong|pat conroy|madeleine king|senate|aph|parliament.*fuel|fuel.*parliament|defence.*iran|iran.*defence/i;
+const FUEL_CONFLICT = /fuel|diesel|petrol|liquid fuel|energy|oil|tanker|shipping|supply chain|reserves/i;
 
-function isRelevant(title, desc, region) {
-  const text = (title + " " + desc).toLowerCase();
-  const fullText = title + " " + desc;
+function isRelevant(title, desc, region, state) {
+  const full = title + " " + desc;
 
-  if (region === "government") {
-    // Must match a govt actor AND a conflict/fuel anchor
-    return GOVT_ANCHOR.test(fullText) && GOVT_ACTOR.test(fullText);
+  // State: must mention that state AND have a fuel/conflict anchor
+  if (state) {
+    const stateMatch = STATE_KEYWORDS[state]?.test(full) ?? false;
+    const topicMatch = FUEL_CONFLICT.test(full) || PRIMARY.test(full) || CONFLICT.test(full);
+    return stateMatch && topicMatch;
+  }
+
+  if (region === "australia") {
+    // Govt feeds need actor + anchor; media feeds just need topic relevance
+    return PRIMARY.test(full) || CONFLICT.test(full) ||
+           (COMMODITY.test(full) && CONTEXT.test(full)) ||
+           (GOVT_ANCHOR.test(full) && GOVT_ACTOR.test(full));
   }
 
   if (region === "tactical") {
-    // Tactical: must have a primary anchor or a direct conflict term
-    return PRIMARY.test(fullText) || CONFLICT.test(fullText) ||
-           (COMMODITY.test(fullText) && CONTEXT.test(fullText));
+    return PRIMARY.test(full) || CONFLICT.test(full) ||
+           (COMMODITY.test(full) && CONTEXT.test(full));
   }
 
-  // Global / Australia / NSW:
-  // Pass if primary anchor present, OR conflict term present,
-  // OR commodity term WITH explicit context (not just "oil" alone)
-  return PRIMARY.test(fullText) ||
-         CONFLICT.test(fullText) ||
-         (COMMODITY.test(fullText) && CONTEXT.test(fullText));
+  // Global
+  return PRIMARY.test(full) || CONFLICT.test(full) ||
+         (COMMODITY.test(full) && CONTEXT.test(full));
 }
 
+// ── PROXY + CONFIG ────────────────────────────────────────────────────────
 const PROXY = "https://api.allorigins.win/get?url=";
 const REFRESH_MS = 3 * 60 * 1000;
 
@@ -205,81 +236,70 @@ const DARK = {
   text:"#c8b98a", text2:"#706050", text3:"#3a3a44", accent:"#cc3333", accent2:"#ff6644",
   header:"#130505", card:"rgba(255,255,255,0.018)", cardHov:"rgba(255,255,255,0.04)",
   tagBg:"#1a1a22", tagText:"#555", liveCol:"#ff6600", streamBg:"#0d0d12", streamBorder:"#1a1a22",
-  govtCol:"#2299cc", timeCol:"#4a7a44",
+  govtCol:"#22aacc", timeCol:"#4a8a44", stateCol:"#aa88ff",
 };
 const LIGHT = {
   bg:"#f5f1ea", bg2:"#ede9df", bg3:"#e4dfd3", border:"#d0cbbf", border2:"#bfbaa8",
   text:"#2a2015", text2:"#6b5c42", text3:"#9e9075", accent:"#cc2222", accent2:"#dd4422",
   header:"#fff9f0", card:"rgba(0,0,0,0.015)", cardHov:"rgba(0,0,0,0.035)",
   tagBg:"#ddd8cc", tagText:"#7a6e58", liveCol:"#cc5500", streamBg:"#ede9df", streamBorder:"#d0cbbf",
-  govtCol:"#1177aa", timeCol:"#336633",
+  govtCol:"#1188aa", timeCol:"#336633", stateCol:"#7744cc",
 };
 
-// ── RSS PARSER (preserves raw pubDate for AEDT display) ───────────────────
+// ── RSS PARSER ────────────────────────────────────────────────────────────
 function parseRSS(xml, feed) {
   try {
     const doc = new DOMParser().parseFromString(xml, "text/xml");
     return Array.from(doc.querySelectorAll("item")).slice(0, 12).reduce((acc, item) => {
-      const title   = item.querySelector("title")?.textContent?.trim() || "";
-      const desc    = (item.querySelector("description")?.textContent || "")
-        .replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 320);
-      const pubRaw  = item.querySelector("pubDate")?.textContent || "";
-      const link    = item.querySelector("link")?.textContent?.trim() || "#";
-
-      // Parse pubDate to a Date object for AEDT formatting
-      let pubDate = null;
-      if (pubRaw) {
-        const parsed = new Date(pubRaw);
-        if (!isNaN(parsed)) pubDate = parsed;
-      }
-      if (!pubDate) pubDate = new Date();
-
-      const dateStr = pubDate.toISOString().split("T")[0]; // YYYY-MM-DD for sorting
-
-      if (!isRelevant(title, desc, feed.region)) return acc;
-
+      const title  = item.querySelector("title")?.textContent?.trim() || "";
+      const desc   = (item.querySelector("description")?.textContent || "")
+        .replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim().slice(0,320);
+      const pubRaw = item.querySelector("pubDate")?.textContent || "";
+      const link   = item.querySelector("link")?.textContent?.trim() || "#";
+      let pubDate  = pubRaw ? new Date(pubRaw) : new Date();
+      if (isNaN(pubDate)) pubDate = new Date();
+      const dateStr = pubDate.toISOString().split("T")[0];
+      if (!isRelevant(title, desc, feed.region, feed.state)) return acc;
       acc.push({
-        id:       `rss_${feed.id}_${Date.now()}_${acc.length}`,
-        date:     dateStr,
-        pubDate:  pubDate,           // raw Date for AEDT display
-        title:    title.slice(0, 130),
-        summary:  desc,
-        region:   feed.region,
-        type:     feed.type,
-        source:   feed.label,
-        link,
-        live:     true,
+        id: `rss_${feed.id}_${Date.now()}_${acc.length}`,
+        date: dateStr, pubDate,
+        title: title.slice(0,130), summary: desc,
+        region: feed.region || "global",
+        state:  feed.state  || null,
+        type:   feed.type,
+        source: feed.label,
+        isGovt: feed.isGovt || false,
+        link, live: true,
       });
       return acc;
     }, []);
   } catch { return []; }
 }
 
-// ── HISTORICAL EVENTS (date-only, no pubDate) ─────────────────────────────
+// ── HISTORICAL EVENTS ─────────────────────────────────────────────────────
 const HISTORY = [
-  { id:"h001", date:"2018-05-08", title:"Trump Withdraws from JCPOA",                          summary:"US exits the 2015 Iran nuclear deal, reimposing full sanctions under maximum pressure.",                                          region:"global",     type:"Diplomatic", source:"Archive" },
-  { id:"h002", date:"2023-10-07", title:"Hamas Attacks Israel — Proxy Axis Mobilises",         summary:"Hamas attacks Israel triggering the Gaza war. Iran-backed Hezbollah, Houthis and Iraqi militias activate.",                      region:"global",     type:"Military",   source:"Archive" },
-  { id:"h003", date:"2024-04-13", title:"Iran Launches First Direct Attack on Israel",          summary:"Iran fires 300+ drones and ballistic missiles — first direct attack in history. Largely intercepted by allied forces.",           region:"global",     type:"Military",   source:"Archive" },
-  { id:"h004", date:"2024-10-01", title:"Iran's Second Direct Strike on Israel",                summary:"~180 ballistic missiles launched following assassination of Hezbollah chief Nasrallah.",                                          region:"global",     type:"Military",   source:"Archive" },
-  { id:"h005", date:"2025-06-13", title:"Israel Launches Twelve-Day War",                       summary:"Israel strikes Iranian nuclear sites, missile factories and air defences. US joins, striking 3 hardened nuclear facilities.",      region:"global",     type:"Military",   source:"Archive" },
-  { id:"h006", date:"2025-06-24", title:"Twelve-Day War Ceasefire",                             summary:"Trump announces ceasefire. Iran's air defence network largely destroyed. Nuclear infrastructure heavily damaged.",                 region:"global",     type:"Diplomatic", source:"Archive" },
-  { id:"h007", date:"2025-09-01", title:"UN Snapback Sanctions Reimposed on Iran",              summary:"UK, France, Germany trigger snapback. Iranian rial collapses. Food shortages and unemployment spike sharply.",                    region:"global",     type:"Economic",   source:"Archive" },
-  { id:"h008", date:"2025-12-28", title:"Nationwide Protests Erupt in Iran",                    summary:"Economic collapse triggers Iran's largest protests since 1979. Over 5 million across 100+ cities.",                              region:"global",     type:"Civil Unrest",source:"Archive" },
-  { id:"h009", date:"2026-01-08", title:"Iran Massacres Protesters — 30,000+ Killed",           summary:"IRGC crackdown kills estimated 30,000. Longest internet blackout in history imposed.",                                            region:"global",     type:"Human Rights",source:"Archive" },
-  { id:"h010", date:"2026-02-28", title:"🔴 OPERATION EPIC FURY LAUNCHED",                      summary:"US and Israel launch joint strikes. Khamenei assassinated. Strait of Hormuz immediately closed. 2026 Iran War begins.",           region:"global",     type:"Military",   source:"Archive", critical:true },
-  { id:"h011", date:"2026-03-01", title:"Iran Retaliates — Missiles Strike Tel Aviv & US Bases",summary:"Hundreds of ballistic missiles hit Israel, Iraq, Qatar and UAE. Houthis reopen Yemen front. Oil prices spike.",                  region:"global",     type:"Military",   source:"Archive" },
-  { id:"h012", date:"2026-03-13", title:"US Counter-Blockade of Strait of Hormuz",              summary:"US Navy targets all ships bound for Iranian ports. Shipping insurance rises 4–6x. Global energy markets in crisis.",             region:"global",     type:"Military",   source:"Archive" },
-  { id:"h013", date:"2026-04-07", title:"Conditional Ceasefire — Pakistan Mediates",            summary:"Temporary ceasefire declared. Strait of Hormuz control and nuclear stockpile remain key unresolved issues.",                     region:"global",     type:"Diplomatic", source:"Archive" },
-  { id:"h014", date:"2026-05-05", title:"US Forces Strait of Hormuz — UAE Under Attack",        summary:"US naval forces attempt to force open the Strait. UAE military infrastructure struck. Ceasefire severely tested.",               region:"global",     type:"Military",   source:"Archive", critical:true },
-  { id:"a001", date:"2026-03-01", title:"Australia Issues 'Do Not Travel' Warning",             summary:"DFAT issues highest-level warning for Iran, Israel, Lebanon, Yemen and parts of UAE.",                                           region:"australia",  type:"Government", source:"DFAT" },
-  { id:"a002", date:"2026-03-03", title:"RAN Frigate Deployed to Persian Gulf",                 summary:"Australian Navy frigate deployed to support allied operations and protect Australian shipping interests.",                         region:"australia",  type:"Military",   source:"Dept. of Defence" },
-  { id:"a003", date:"2026-03-10", title:"Fuel Prices Hit Record Highs Across Australia",        summary:"Petrol prices spike nationally as Strait of Hormuz closure disrupts ~20% of global oil supply.",                                region:"nsw",        type:"Economic",   source:"ACCC" },
-  { id:"a004", date:"2026-03-15", title:"NSW Activates Emergency Fuel Reserves",                summary:"NSW Premier activates strategic fuel reserve protocols. Price caps on essential transport corridors under consideration.",          region:"nsw",        type:"Government", source:"NSW Premier's Office" },
-  { id:"a005", date:"2026-04-02", title:"Australia Joins 7-Nation Hormuz Safety Coalition",     summary:"Australia pledges freedom-of-navigation support alongside UK, France, Japan, Canada, Germany and UAE.",                          region:"australia",  type:"Diplomatic", source:"DFAT" },
-  { id:"g001", date:"2026-03-10", title:"Senate Foreign Affairs Committee — Emergency Hearing", summary:"Senate Foreign Affairs, Defence and Trade Committee convenes emergency estimates hearing on Middle East conflict impact on Australia.", region:"government", type:"Parliament", source:"APH" },
-  { id:"g002", date:"2026-03-22", title:"PM Albanese: Australia Securing Alternative Fuel Supply", summary:"Prime Minister announces emergency fuel security agreements with US, Japan and South Korea to offset Hormuz disruption.",       region:"government", type:"Ministerial",source:"PM's Office" },
-  { id:"g003", date:"2026-04-10", title:"Foreign Minister Wong: Ceasefire 'Welcome But Fragile'", summary:"Foreign Minister Penny Wong issues statement on Iran ceasefire, calls for permanent resolution and protection of shipping lanes.", region:"government", type:"Ministerial",source:"DFAT" },
-  { id:"g004", date:"2026-04-30", title:"Australia-South Korea Joint Statement on Liquid Fuel Security", summary:"Australia and Republic of Korea renew commitment to stable supply of diesel and other liquid fuels following Hormuz crisis.", region:"government", type:"Diplomatic", source:"Foreign Minister" },
+  { id:"h001", date:"2018-05-08", title:"Trump Withdraws from JCPOA",                            summary:"US exits the 2015 Iran nuclear deal, reimposing full sanctions.",                                              region:"global",    type:"Diplomatic",  source:"Archive" },
+  { id:"h002", date:"2023-10-07", title:"Hamas Attacks Israel — Proxy Axis Mobilises",            summary:"Hamas attacks Israel. Iran-backed Hezbollah, Houthis and Iraqi militias activate.",                          region:"global",    type:"Military",    source:"Archive" },
+  { id:"h003", date:"2024-04-13", title:"Iran Launches First Direct Attack on Israel",            summary:"Iran fires 300+ drones and ballistic missiles — first direct attack in history.",                            region:"global",    type:"Military",    source:"Archive" },
+  { id:"h004", date:"2024-10-01", title:"Iran's Second Direct Strike on Israel",                  summary:"~180 ballistic missiles launched following assassination of Hezbollah chief Nasrallah.",                      region:"global",    type:"Military",    source:"Archive" },
+  { id:"h005", date:"2025-06-13", title:"Israel Launches Twelve-Day War",                         summary:"Israel strikes Iranian nuclear sites and missile factories. US joins, striking 3 hardened nuclear facilities.", region:"global",    type:"Military",    source:"Archive" },
+  { id:"h006", date:"2025-06-24", title:"Twelve-Day War Ceasefire",                               summary:"Trump announces ceasefire. Iran's air defence largely destroyed. Nuclear infrastructure heavily damaged.",     region:"global",    type:"Diplomatic",  source:"Archive" },
+  { id:"h007", date:"2025-09-01", title:"UN Snapback Sanctions Reimposed on Iran",                summary:"UK, France, Germany trigger snapback. Iranian rial collapses. Food shortages spike.",                         region:"global",    type:"Economic",    source:"Archive" },
+  { id:"h008", date:"2025-12-28", title:"Nationwide Protests Erupt in Iran",                      summary:"Over 5 million Iranians across 100+ cities demand regime change.",                                            region:"global",    type:"Civil Unrest",source:"Archive" },
+  { id:"h009", date:"2026-01-08", title:"Iran Massacres Protesters — 30,000+ Killed",             summary:"IRGC crackdown. Longest internet blackout in history imposed.",                                               region:"global",    type:"Human Rights",source:"Archive" },
+  { id:"h010", date:"2026-02-28", title:"🔴 OPERATION EPIC FURY LAUNCHED",                        summary:"US and Israel launch joint strikes. Khamenei assassinated. Strait of Hormuz closed.",                        region:"global",    type:"Military",    source:"Archive", critical:true },
+  { id:"h011", date:"2026-03-01", title:"Iran Retaliates — Missiles Strike Tel Aviv & US Bases",  summary:"Hundreds of missiles hit Israel, Iraq, Qatar, UAE. Houthis reopen Yemen front. Oil prices spike.",           region:"global",    type:"Military",    source:"Archive" },
+  { id:"h012", date:"2026-03-13", title:"US Counter-Blockade of Strait of Hormuz",                summary:"US Navy targets ships bound for Iranian ports. Shipping insurance rises 4–6x.",                              region:"global",    type:"Military",    source:"Archive" },
+  { id:"h013", date:"2026-04-07", title:"Conditional Ceasefire — Pakistan Mediates",              summary:"Temporary ceasefire. Strait of Hormuz control remains key unresolved issue.",                                region:"global",    type:"Diplomatic",  source:"Archive" },
+  { id:"h014", date:"2026-05-05", title:"US Forces Strait of Hormuz — UAE Under Attack",          summary:"US naval forces attempt to force open the Strait. UAE infrastructure struck.",                               region:"global",    type:"Military",    source:"Archive", critical:true },
+  { id:"a001", date:"2026-03-01", title:"Australia Issues 'Do Not Travel' Warning",               summary:"DFAT issues highest-level warning for Iran, Israel, Lebanon, Yemen and parts of UAE.",                       region:"australia", type:"Advisory",    source:"DFAT",         isGovt:true },
+  { id:"a002", date:"2026-03-03", title:"RAN Frigate Deployed to Persian Gulf",                   summary:"Australian Navy frigate deployed to support allied operations.",                                              region:"australia", type:"Military",    source:"Dept. of Defence", isGovt:true },
+  { id:"a003", date:"2026-03-10", title:"Fuel Prices Hit Record Highs Across Australia",          summary:"Petrol prices spike as Strait of Hormuz closure disrupts ~20% of global oil supply.",                        region:"australia", type:"Regulatory",  source:"ACCC",         isGovt:true },
+  { id:"a004", date:"2026-03-15", title:"NSW Activates Emergency Fuel Reserves",                  summary:"NSW Premier activates strategic fuel reserve protocols.",                                                      state:"nsw",        type:"Government",  source:"NSW Premier's Office" },
+  { id:"a005", date:"2026-04-02", title:"Australia Joins 7-Nation Hormuz Safety Coalition",       summary:"Australia pledges freedom-of-navigation support alongside UK, France, Japan, Canada, Germany, UAE.",          region:"australia", type:"Diplomatic",  source:"DFAT",         isGovt:true },
+  { id:"a006", date:"2026-04-10", title:"Foreign Minister Wong: Ceasefire 'Welcome But Fragile'", summary:"Penny Wong issues statement calling for permanent resolution and protection of shipping lanes.",              region:"australia", type:"Ministerial", source:"Foreign Minister", isGovt:true },
+  { id:"a007", date:"2026-04-30", title:"Australia-South Korea Liquid Fuel Security Statement",   summary:"Australia and South Korea renew commitment to stable supply of diesel and liquid fuels.",                    region:"australia", type:"Diplomatic",  source:"Foreign Minister", isGovt:true },
+  { id:"a008", date:"2026-03-22", title:"PM Albanese: Securing Alternative Fuel Supply",          summary:"Emergency fuel security agreements with US, Japan and South Korea to offset Hormuz disruption.",             region:"australia", type:"Ministerial", source:"PM's Office",  isGovt:true },
 ];
 
 // ── COMPONENTS ────────────────────────────────────────────────────────────
@@ -288,21 +308,32 @@ function LiveDot({ color, size=7 }) {
     background:color||"#ff6600", animation:"pls 1.3s infinite", flexShrink:0 }} />;
 }
 
+function SourceBadge({ type, isGovt, T }) {
+  const col = SOURCE_COLORS[type] || "#888";
+  return (
+    <span style={{
+      fontSize:"8px", padding:"1px 5px", borderRadius:"2px",
+      background: `${col}22`, border:`1px solid ${col}55`,
+      color: col, letterSpacing:"0.5px", fontWeight:600,
+      whiteSpace:"nowrap", flexShrink:0,
+    }}>
+      {isGovt ? "🏛️ " : ""}{type?.toUpperCase()}
+    </span>
+  );
+}
+
 function TimeStamp({ event, T }) {
-  // Live events: show full AEDT datetime. Historical: show date only.
   if (event.pubDate) {
-    const aedt = formatAEDT(event.pubDate);
-    const timeOnly = formatAEDTTimeOnly(event.pubDate);
     return (
-      <div style={{ textAlign:"right" }}>
-        <div style={{ fontSize:"9px", color:T.text3, lineHeight:1.5, whiteSpace:"nowrap" }}>
-          {event.date.split("-").reverse().slice(0,2).join("/")+"/"+event.date.split("-")[0].slice(2)}
+      <div style={{ textAlign:"right", minWidth:88 }}>
+        <div style={{ fontSize:"9px", color:T.text3, lineHeight:1.4 }}>
+          {formatDateShort(event.date)}
         </div>
-        <div style={{ fontSize:"10px", color:T.timeCol, fontWeight:600, letterSpacing:"0.3px", whiteSpace:"nowrap" }}>
-          {timeOnly} AEDT
+        <div style={{ fontSize:"10px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>
+          {formatTimeOnly(event.pubDate)} AEDT
         </div>
         {event.live && (
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3, marginTop:2 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3, marginTop:1 }}>
             <LiveDot color={T.liveCol} size={5} />
             <span style={{ fontSize:"8px", color:T.liveCol, letterSpacing:"1px" }}>LIVE</span>
           </div>
@@ -310,67 +341,57 @@ function TimeStamp({ event, T }) {
       </div>
     );
   }
-  // Historical event
   return (
-    <div style={{ textAlign:"right" }}>
-      <div style={{ fontSize:"10px", color:T.text3, lineHeight:1.5 }}>
-        {event.date.split("-").reverse().join("/")}
-      </div>
+    <div style={{ textAlign:"right", minWidth:88 }}>
+      <div style={{ fontSize:"10px", color:T.text3 }}>{formatDateShort(event.date)}</div>
     </div>
   );
-}
-
-function RegionIcon({ region }) {
-  const icons = { global:"🌐", australia:"🇦🇺", nsw:"📍", government:"🏛️", tactical:"⚔️" };
-  return icons[region] || "●";
 }
 
 function EventCard({ event, T }) {
   const [open, setOpen] = useState(false);
   const isCrit = event.critical;
-  const isLive = event.live;
-  const isGovt = event.region === "government";
-  const accentColor = isGovt ? T.govtCol : isCrit ? T.accent : isLive ? T.liveCol : "transparent";
+  const isGovt = event.isGovt;
+  const isState = !!event.state;
+  const borderCol = isCrit ? T.accent : isGovt ? T.govtCol : event.live ? T.liveCol : "transparent";
 
   return (
-    <div onClick={() => setOpen(o => !o)} style={{
-      display:"flex", gap:"12px", padding:"9px 14px 9px 10px", marginBottom:"1px",
+    <div onClick={() => setOpen(o=>!o)} style={{
+      display:"flex", gap:"12px", padding:"10px 14px 10px 10px", marginBottom:"1px",
       background: open ? T.cardHov : isCrit ? `${T.accent}11` : isGovt ? `${T.govtCol}08` : T.card,
-      borderLeft:`3px solid ${accentColor}`,
+      borderLeft:`3px solid ${borderCol}`,
       cursor:"pointer", transition:"background 0.15s",
     }}>
-      {/* Timestamp column */}
-      <div style={{ flexShrink:0, width:90, paddingTop:2 }}>
-        <TimeStamp event={event} T={T} />
-      </div>
+      <TimeStamp event={event} T={T} />
       {/* Node */}
-      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0, width:16 }}>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0, width:14 }}>
         <div style={{ width:9, height:9, borderRadius:"50%", marginTop:3, flexShrink:0,
-          background: isCrit?T.accent : isGovt?T.govtCol : isLive?T.liveCol : T.border2,
-          border:`2px solid ${isCrit?T.accent:isGovt?T.govtCol:isLive?T.liveCol:T.border2}`,
-          boxShadow: isCrit?`0 0 8px ${T.accent}66` : isGovt?`0 0 6px ${T.govtCol}44` : "none" }} />
+          background: isCrit?T.accent : isGovt?T.govtCol : event.live?T.liveCol : T.border2,
+          border:`2px solid ${isCrit?T.accent:isGovt?T.govtCol:event.live?T.liveCol:T.border2}`,
+          boxShadow: isCrit?`0 0 8px ${T.accent}66`:isGovt?`0 0 5px ${T.govtCol}44`:"none" }} />
         <div style={{ flex:1, width:1, background:T.border, marginTop:4, minHeight:14 }} />
       </div>
       {/* Content */}
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-start" }}>
-          <span style={{ fontSize:"12px", fontWeight:600,
-            color: isCrit?T.accent : isGovt?T.govtCol : isLive?T.accent2 : T.text,
-            flex:1, minWidth:"140px", lineHeight:1.4 }}>{event.title}</span>
-          <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-            <span style={{ fontSize:"9px", padding:"2px 7px", borderRadius:"2px",
-              background:T.tagBg, color:T.tagText, letterSpacing:"0.5px" }}>{event.type}</span>
-            <span style={{ fontSize:"9px", padding:"2px 7px", borderRadius:"2px",
-              background:T.tagBg, color:T.tagText }}><RegionIcon region={event.region} /></span>
-          </div>
+        {/* Title row */}
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-start", marginBottom:4 }}>
+          <span style={{ fontSize:"12px", fontWeight:600, lineHeight:1.4, flex:1, minWidth:"140px",
+            color: isCrit?T.accent : isGovt?T.govtCol : event.live?T.accent2 : T.text }}>
+            {event.title}
+          </span>
         </div>
-        {open && <div style={{ fontSize:"11px", color:T.text2, marginTop:5, lineHeight:1.6 }}>{event.summary}</div>}
-        <div style={{ display:"flex", gap:10, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
-          <span style={{ fontSize:"9px", color:T.text3 }}>◈ {event.source}</span>
+        {/* Summary on expand */}
+        {open && <div style={{ fontSize:"11px", color:T.text2, marginTop:4, lineHeight:1.6, marginBottom:6 }}>{event.summary}</div>}
+        {/* Source row — MORE VISIBLE */}
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginTop:2 }}>
+          <SourceBadge type={event.type} isGovt={event.isGovt} T={T} />
+          <span style={{ fontSize:"10px", color:T.text2, fontWeight:500 }}>{event.source}</span>
           {event.link && event.link !== "#" && (
             <a href={event.link} target="_blank" rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              style={{ fontSize:"9px", color:T.accent, textDecoration:"none" }}>→ source ↗</a>
+              onClick={e=>e.stopPropagation()}
+              style={{ fontSize:"9px", color:T.accent, textDecoration:"none", marginLeft:"auto" }}>
+              → source ↗
+            </a>
           )}
         </div>
       </div>
@@ -378,35 +399,42 @@ function EventCard({ event, T }) {
   );
 }
 
+// Stream item for All view columns
 function StreamItem({ event, T }) {
-  const isGovt = event.region === "government";
+  const isGovt = event.isGovt;
+  const isCrit = event.critical;
+  const col = isCrit ? T.accent : isGovt ? T.govtCol : T.text;
+  const srcCol = SOURCE_COLORS[event.type] || "#888";
+
   return (
     <div style={{ padding:"8px 10px", borderBottom:`1px solid ${T.streamBorder}`,
-      background: event.critical ? `${T.accent}0a` : isGovt ? `${T.govtCol}08` : "transparent" }}>
-      <div style={{ display:"flex", alignItems:"flex-start", gap:6 }}>
-        {event.live && <LiveDot color={isGovt ? T.govtCol : T.liveCol} size={6} />}
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:"11px", fontWeight:600,
-            color: event.critical?T.accent : isGovt?T.govtCol : T.text,
-            lineHeight:1.4, marginBottom:3 }}>{event.title}</div>
-          <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-            {/* AEDT time for live items, date only for historical */}
-            {event.pubDate ? (
-              <span style={{ fontSize:"9px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>
-                {formatAEDTTimeOnly(event.pubDate)} AEDT
-              </span>
-            ) : (
-              <span style={{ fontSize:"9px", color:T.text3 }}>
-                {event.date.split("-").reverse().join("/")}
-              </span>
-            )}
-            <span style={{ fontSize:"9px", color:T.text3 }}>◈ {event.source}</span>
-            {event.link && event.link !== "#" && (
-              <a href={event.link} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize:"9px", color:T.accent, textDecoration:"none" }}>↗</a>
-            )}
-          </div>
+      background: isCrit?`${T.accent}0a` : isGovt?`${T.govtCol}07` : "transparent" }}>
+      {/* Headline */}
+      <div style={{ display:"flex", alignItems:"flex-start", gap:5, marginBottom:4 }}>
+        {event.live && <LiveDot color={isGovt?T.govtCol:T.liveCol} size={6} />}
+        <div style={{ fontSize:"11px", fontWeight:600, color:col, lineHeight:1.4 }}>
+          {event.title}
         </div>
+      </div>
+      {/* Source row */}
+      <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+        {/* Time */}
+        {event.pubDate
+          ? <span style={{ fontSize:"9px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>{formatTimeOnly(event.pubDate)} AEDT</span>
+          : <span style={{ fontSize:"9px", color:T.text3 }}>{formatDateShort(event.date)}</span>
+        }
+        {/* Source type pill */}
+        <span style={{ fontSize:"8px", padding:"1px 4px", borderRadius:"2px",
+          background:`${srcCol}22`, border:`1px solid ${srcCol}44`, color:srcCol,
+          fontWeight:600, whiteSpace:"nowrap" }}>
+          {isGovt?"🏛️ ":""}{event.type}
+        </span>
+        {/* Source name */}
+        <span style={{ fontSize:"9px", color:T.text2, fontWeight:500 }}>{event.source}</span>
+        {event.link && event.link !== "#" && (
+          <a href={event.link} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize:"9px", color:T.accent, textDecoration:"none", marginLeft:"auto" }}>↗</a>
+        )}
       </div>
     </div>
   );
@@ -414,15 +442,15 @@ function StreamItem({ event, T }) {
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────
 function App() {
-  const [dark, setDark]             = useState(true);
-  const [tab,  setTab]              = useState("all");
-  const [liveEvents, setLiveEvents] = useState([]);
-  const [feedStatus, setFeedStatus] = useState({});
-  const [loading, setLoading]       = useState(false);
+  const [dark, setDark]               = useState(true);
+  const [tab, setTab]                 = useState("all");
+  const [activeState, setActiveState] = useState("nsw");
+  const [liveEvents, setLiveEvents]   = useState([]);
+  const [feedStatus, setFeedStatus]   = useState({});
+  const [loading, setLoading]         = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [countdown, setCountdown]   = useState(180);
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [search, setSearch]         = useState("");
+  const [countdown, setCountdown]     = useState(180);
+  const [search, setSearch]           = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const timerRef = useRef(null);
   const cdRef    = useRef(null);
@@ -431,30 +459,27 @@ function App() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const statuses = {}, items = [];
-    // Decide which feeds to fetch based on active tab
     const feedsToFetch =
-      tab === "tactical"   ? TACTICAL_FEEDS :
-      tab === "government" ? GOVT_FEEDS :
+      tab === "tactical" ? TACTICAL_FEEDS :
+      tab === "states"   ? STATE_FEEDS :
       ALL_FEEDS;
 
     await Promise.allSettled(feedsToFetch.map(async feed => {
       try {
         const r = await fetch(PROXY + encodeURIComponent(feed.url));
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw new Error();
         const j = await r.json();
         const parsed = parseRSS(j.contents, feed);
         items.push(...parsed);
         statuses[feed.id] = { ok:true, count:parsed.length };
-      } catch(e) {
-        statuses[feed.id] = { ok:false };
-      }
+      } catch { statuses[feed.id] = { ok:false }; }
     }));
 
     setFeedStatus(p => ({ ...p, ...statuses }));
     if (items.length) {
       setLiveEvents(prev => {
         const seen = new Set(prev.map(e => e.title));
-        return [...items.filter(e => !seen.has(e.title)), ...prev].slice(0, 400);
+        return [...items.filter(e => !seen.has(e.title)), ...prev].slice(0, 500);
       });
     }
     setLastRefresh(new Date());
@@ -465,191 +490,174 @@ function App() {
   useEffect(() => {
     fetchAll();
     timerRef.current = setInterval(fetchAll, REFRESH_MS);
-    cdRef.current    = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
+    cdRef.current    = setInterval(() => setCountdown(c => Math.max(0,c-1)), 1000);
     return () => { clearInterval(timerRef.current); clearInterval(cdRef.current); };
   }, [fetchAll]);
 
-  const allEvents = [...liveEvents, ...HISTORY]
-    .sort((a, b) => {
-      // Sort by pubDate if available, otherwise by date string
-      const da = a.pubDate ? a.pubDate : new Date(a.date);
-      const db = b.pubDate ? b.pubDate : new Date(b.date);
-      return db - da;
-    });
+  const allEvents = [...liveEvents, ...HISTORY].sort((a,b) => {
+    const da = a.pubDate || new Date(a.date);
+    const db = b.pubDate || new Date(b.date);
+    return db - da;
+  });
 
-  const allTypes = [...new Set(allEvents.map(e => e.type))].sort();
-
-  function filtered(region) {
+  function getEvents(region, state) {
     return allEvents.filter(e => {
-      if (region && e.region !== region) return false;
-      if (typeFilter !== "all" && e.type !== typeFilter) return false;
-      if (search && !`${e.title} ${e.summary} ${e.source}`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (state)   return e.state === state;
+      if (region)  return e.region === region && !e.state;
       return true;
+    }).filter(e => {
+      if (!search) return true;
+      return `${e.title} ${e.summary} ${e.source}`.toLowerCase().includes(search.toLowerCase());
     });
   }
 
-  const okFeeds    = Object.values(feedStatus).filter(s => s.ok).length;
-  const totalFeeds = ALL_FEEDS.length;
+  const okFeeds = Object.values(feedStatus).filter(s=>s.ok).length;
+  const totalF  = ALL_FEEDS.length;
+  const nowAEDT = new Date().toLocaleString("en-AU",{timeZone:"Australia/Sydney",hour:"numeric",minute:"2-digit",hour12:true,day:"2-digit",month:"2-digit"});
 
-  const nowAEDT = new Date().toLocaleString("en-AU", {
-    timeZone:"Australia/Sydney", hour:"numeric", minute:"2-digit", hour12:true,
-    day:"2-digit", month:"2-digit"
-  });
-
-  function TabBtn({ id, label }) {
+  function TabBtn({ id, label, accent }) {
     const active = tab === id;
-    const isGovt = id === "government";
+    const ac = accent || T.accent;
     return (
       <button onClick={() => setTab(id)} style={{
         padding:"6px 14px", borderRadius:"2px", fontSize:"11px", letterSpacing:"1px",
-        border: active ? `1px solid ${isGovt ? T.govtCol : T.accent}` : `1px solid ${T.border2}`,
-        background: active ? `${isGovt ? T.govtCol : T.accent}18` : T.card,
-        color: active ? (isGovt ? T.govtCol : T.accent) : T.text3,
+        border: active ? `1px solid ${ac}` : `1px solid ${T.border2}`,
+        background: active ? `${ac}18` : T.card,
+        color: active ? ac : T.text3,
         cursor:"pointer", fontFamily:"inherit", transition:"all 0.12s",
       }}>{label}</button>
     );
   }
 
-  // Which feeds to show in the status bar
-  const statusFeeds =
-    tab === "tactical"   ? TACTICAL_FEEDS :
-    tab === "government" ? GOVT_FEEDS :
-    RSS_FEEDS;
+  // Which status feeds to show
+  const statusFeedsToShow =
+    tab === "tactical" ? TACTICAL_FEEDS :
+    tab === "states"   ? STATE_FEEDS.filter(f => f.state === activeState) :
+    tab === "australia"? AUSTRALIA_FEEDS :
+    GLOBAL_FEEDS;
 
   return (
     <div style={{ background:T.bg, color:T.text, minHeight:"100vh", fontFamily:"'IBM Plex Mono','Courier New',monospace" }}>
       <style>{`
-        @keyframes pls { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.5)} }
-        @keyframes glitch { 0%,92%,100%{text-shadow:none} 93%{text-shadow:2px 0 #cc3333,-2px 0 #4488ff} 95%{text-shadow:-2px 0 #cc3333,2px 0 #4488ff} }
-        @keyframes fu { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-        .fu { animation:fu .2s ease both }
-        button:hover { opacity:.8!important }
-        a:hover { opacity:.7 }
-        input:focus, select:focus { outline:none }
+        @keyframes pls{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
+        @keyframes glitch{0%,92%,100%{text-shadow:none}93%{text-shadow:2px 0 #cc3333,-2px 0 #4488ff}95%{text-shadow:-2px 0 #cc3333,2px 0 #4488ff}}
+        @keyframes fu{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        .fu{animation:fu .2s ease both}
+        button:hover{opacity:.8!important} a:hover{opacity:.7}
+        input:focus,select:focus{outline:none}
       `}</style>
 
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div style={{ background:`linear-gradient(180deg,${T.header} 0%,${T.bg} 100%)`, borderBottom:`1px solid ${T.border}`, padding:"16px 20px 0" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10 }}>
           <div>
-            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(11px,2vw,14px)", letterSpacing:"6px", color:T.text3, marginBottom:2 }}>
-              LIVE LIQUID FUELS NEWS FEED
-            </div>
-            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(22px,4vw,36px)", letterSpacing:"3px", color:T.accent, lineHeight:1, animation:"glitch 12s infinite" }}>
-              IRAN US CONFLICT
-            </div>
-            <div style={{ fontSize:"9px", letterSpacing:"3px", color:T.text3, marginTop:4 }}>
-              LIVE NEWS FEED · UPDATED EVERY 3 MIN · ALL TIMES AEDT
-            </div>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(11px,2vw,14px)", letterSpacing:"6px", color:T.text3, marginBottom:2 }}>LIVE LIQUID FUELS NEWS FEED</div>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(22px,4vw,36px)", letterSpacing:"3px", color:T.accent, lineHeight:1, animation:"glitch 12s infinite" }}>IRAN US CONFLICT</div>
+            <div style={{ fontSize:"9px", letterSpacing:"3px", color:T.text3, marginTop:4 }}>LIVE NEWS FEED · UPDATED EVERY 3 MIN · ALL TIMES AEDT</div>
           </div>
           <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:5 }}>
             <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap", justifyContent:"flex-end" }}>
               <LiveDot color={T.accent} />
               <span style={{ fontSize:"10px", color:T.accent, letterSpacing:"2px" }}>LIVE · {countdown}s</span>
-              <span style={{ fontSize:"10px", color:T.timeCol, letterSpacing:"1px" }}>{nowAEDT} AEDT</span>
-              <button onClick={fetchAll} disabled={loading} style={{
-                padding:"3px 10px", border:`1px solid ${T.border2}`, borderRadius:"2px",
-                background:loading?`${T.accent}15`:T.card, color:loading?T.accent:T.text3,
-                cursor:loading?"wait":"pointer", fontSize:"10px", fontFamily:"inherit", letterSpacing:"1px" }}>
-                {loading ? "⟳ …" : "⟳ SYNC"}
+              <span style={{ fontSize:"10px", color:T.timeCol }}>{nowAEDT} AEDT</span>
+              <button onClick={fetchAll} disabled={loading} style={{ padding:"3px 10px", border:`1px solid ${T.border2}`, borderRadius:"2px", background:loading?`${T.accent}15`:T.card, color:loading?T.accent:T.text3, cursor:loading?"wait":"pointer", fontSize:"10px", fontFamily:"inherit" }}>
+                {loading?"⟳ …":"⟳ SYNC"}
               </button>
-              <button onClick={() => setShowSettings(s => !s)} style={{
-                padding:"3px 10px", border:`1px solid ${showSettings?T.accent:T.border2}`, borderRadius:"2px",
-                background:showSettings?`${T.accent}15`:T.card, color:showSettings?T.accent:T.text3,
-                cursor:"pointer", fontSize:"10px", fontFamily:"inherit", letterSpacing:"1px" }}>
+              <button onClick={() => setShowSettings(s=>!s)} style={{ padding:"3px 10px", border:`1px solid ${showSettings?T.accent:T.border2}`, borderRadius:"2px", background:showSettings?`${T.accent}15`:T.card, color:showSettings?T.accent:T.text3, cursor:"pointer", fontSize:"10px", fontFamily:"inherit" }}>
                 ⚙ SETTINGS
               </button>
             </div>
-            <div style={{ fontSize:"9px", color:T.text3 }}>
-              {okFeeds}/{totalFeeds} feeds · {liveEvents.length} live · {HISTORY.length} archived
-            </div>
-            {lastRefresh && (
-              <div style={{ fontSize:"9px", color:T.timeCol }}>
-                Last sync: {formatAEDT(lastRefresh)} AEDT
-              </div>
-            )}
+            <div style={{ fontSize:"9px", color:T.text3 }}>{okFeeds}/{totalF} feeds · {liveEvents.length} live · {HISTORY.length} archived</div>
+            {lastRefresh && <div style={{ fontSize:"9px", color:T.timeCol }}>Last sync: {formatAEDT(lastRefresh)} AEDT</div>}
           </div>
         </div>
 
-        {/* SETTINGS PANEL */}
+        {/* SETTINGS */}
         {showSettings && (
           <div className="fu" style={{ margin:"12px 0 0", padding:"14px 16px", background:T.bg2, border:`1px solid ${T.border}`, borderRadius:"3px" }}>
             <div style={{ fontSize:"10px", color:T.text3, letterSpacing:"3px", marginBottom:10 }}>⚙ DISPLAY SETTINGS</div>
-            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
               <span style={{ fontSize:"11px", color:T.text2 }}>Theme:</span>
-              <button onClick={() => setDark(true)} style={{ padding:"5px 18px", border:`1px solid ${dark?T.accent:T.border2}`, borderRadius:"2px", background:dark?`${T.accent}18`:T.card, color:dark?T.accent:T.text2, cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>🌑 Dark</button>
-              <button onClick={() => setDark(false)} style={{ padding:"5px 18px", border:`1px solid ${!dark?T.accent:T.border2}`, borderRadius:"2px", background:!dark?`${T.accent}18`:T.card, color:!dark?T.accent:T.text2, cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>☀️ Light</button>
+              <button onClick={() => setDark(true)}  style={{ padding:"5px 18px", border:`1px solid ${dark?T.accent:T.border2}`,  background:dark?`${T.accent}18`:T.card,  color:dark?T.accent:T.text2,  cursor:"pointer", fontSize:"11px", fontFamily:"inherit", borderRadius:"2px" }}>🌑 Dark</button>
+              <button onClick={() => setDark(false)} style={{ padding:"5px 18px", border:`1px solid ${!dark?T.accent:T.border2}`, background:!dark?`${T.accent}18`:T.card, color:!dark?T.accent:T.text2, cursor:"pointer", fontSize:"11px", fontFamily:"inherit", borderRadius:"2px" }}>☀️ Light</button>
             </div>
           </div>
         )}
 
-        {/* TABS */}
+        {/* MAIN TABS */}
         <div style={{ display:"flex", gap:5, marginTop:14, flexWrap:"wrap" }}>
-          <TabBtn id="all"        label="📡 ALL" />
-          <TabBtn id="global"     label="🌐 GLOBAL" />
-          <TabBtn id="australia"  label="🇦🇺 AUSTRALIA" />
-          <TabBtn id="nsw"        label="📍 NSW" />
-          <TabBtn id="government" label="🏛️ GOVERNMENT" />
-          <TabBtn id="timeline"   label="📋 TIMELINE" />
-          <TabBtn id="tactical"   label="⚔️ TACTICAL" />
+          <TabBtn id="all"       label="📡 ALL" />
+          <TabBtn id="global"    label="🌐 GLOBAL" />
+          <TabBtn id="australia" label="🇦🇺 AUSTRALIA" accent={T.govtCol} />
+          <TabBtn id="states"    label="📍 STATES" accent={T.stateCol} />
+          <TabBtn id="timeline"  label="📋 TIMELINE" />
+          <TabBtn id="tactical"  label="⚔️ TACTICAL" />
         </div>
 
-        {/* SEARCH + TYPE FILTER — not on all/tactical */}
-        {tab !== "all" && tab !== "tactical" && (
+        {/* STATE SUB-TABS */}
+        {tab === "states" && (
+          <div style={{ display:"flex", gap:4, marginTop:10, flexWrap:"wrap" }}>
+            {Object.entries(STATE_META).map(([key, meta]) => (
+              <button key={key} onClick={() => setActiveState(key)} style={{
+                padding:"4px 12px", borderRadius:"2px", fontSize:"10px", letterSpacing:"1px",
+                border: activeState===key ? `1px solid ${T.stateCol}` : `1px solid ${T.border2}`,
+                background: activeState===key ? `${T.stateCol}18` : T.card,
+                color: activeState===key ? T.stateCol : T.text3,
+                cursor:"pointer", fontFamily:"inherit",
+              }}>{meta.flag} {meta.label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* SEARCH */}
+        {(tab === "global" || tab === "australia" || tab === "timeline" || tab === "states") && (
           <div style={{ display:"flex", gap:8, marginTop:10, paddingBottom:12, flexWrap:"wrap", alignItems:"center" }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
-              style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:"2px", color:T.text, padding:"5px 12px", fontSize:"11px", width:"180px", fontFamily:"inherit" }} />
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{
-              background:T.bg2, border:`1px solid ${T.border}`, borderRadius:"2px",
-              color:T.text2, padding:"5px 10px", fontSize:"11px", fontFamily:"inherit", cursor:"pointer" }}>
-              <option value="all">All Types</option>
-              {allTypes.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
+              style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:"2px", color:T.text, padding:"5px 12px", fontSize:"11px", width:"200px", fontFamily:"inherit" }} />
             <span style={{ fontSize:"9px", color:T.text3 }}>
-              {filtered(tab === "timeline" || tab === "government" ? tab === "government" ? "government" : null : tab).length} events
+              {tab==="states" ? getEvents(null,activeState).length : getEvents(tab==="timeline"?null:tab,null).length} items
             </span>
           </div>
         )}
-        <div style={{ height: (tab === "all" || tab === "tactical") ? 12 : 0 }} />
+        <div style={{ height:(tab==="all"||tab==="tactical")?12:0 }} />
       </div>
 
-      {/* ── FEED STATUS STRIP ── */}
+      {/* FEED STATUS STRIP */}
       <div style={{ background:T.bg2, borderBottom:`1px solid ${T.border}`, padding:"5px 20px", display:"flex", gap:10, flexWrap:"wrap", overflowX:"auto" }}>
-        {statusFeeds.map(f => {
+        {statusFeedsToShow.map(f => {
           const s = feedStatus[f.id];
           return (
             <div key={f.id} style={{ display:"flex", alignItems:"center", gap:4 }}>
               <span style={{ width:6, height:6, borderRadius:"50%", display:"inline-block", flexShrink:0,
-                background: !s ? "#333" : s.ok ? "#22cc66" : "#cc4444" }} />
+                background:!s?"#333":s.ok?"#22cc66":"#cc4444" }} />
               <span style={{ fontSize:"9px", color:T.text3, whiteSpace:"nowrap" }}>{f.label}</span>
             </div>
           );
         })}
       </div>
 
-      {/* ── CONTENT ── */}
+      {/* CONTENT */}
       <div style={{ maxWidth:"1400px", margin:"0 auto", padding:"16px 12px 48px" }}>
 
-        {/* ALL — 4 streams */}
+        {/* ALL — 3 columns: Global, Australia (merged), Global */}
         {tab === "all" && (
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"flex-start" }}>
             {[
-              ["global",     "🌐 Global"],
-              ["australia",  "🇦🇺 Australia"],
-              ["nsw",        "📍 NSW"],
-              ["government", "🏛️ Government"],
-            ].map(([reg, label]) => {
-              const items = filtered(reg).slice(0, 40);
-              const isGovt = reg === "government";
+              { reg:"global",    label:"🌐 Global",     accent:T.accent },
+              { reg:"australia", label:"🇦🇺 Australia + Gov", accent:T.govtCol },
+              { reg:"states",    label:"📍 States",     accent:T.stateCol, isState:true },
+            ].map(col => {
+              const items = col.isState
+                ? allEvents.filter(e => !!e.state).slice(0,40)
+                : getEvents(col.reg, null).slice(0,40);
               return (
-                <div key={reg} style={{ flex:"1", minWidth:"220px", border:`1px solid ${isGovt ? T.govtCol+"44" : T.streamBorder}`, borderRadius:"3px", overflow:"hidden", background:T.streamBg }}>
-                  <div style={{ padding:"9px 12px", borderBottom:`1px solid ${isGovt ? T.govtCol+"44" : T.streamBorder}`,
-                    background: isGovt ? `${T.govtCol}12` : T.bg2,
+                <div key={col.reg} style={{ flex:"1", minWidth:"240px", border:`1px solid ${col.accent}33`, borderRadius:"3px", overflow:"hidden", background:T.streamBg }}>
+                  <div style={{ padding:"9px 12px", borderBottom:`1px solid ${col.accent}33`, background:`${col.accent}10`,
                     display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontSize:"12px", fontWeight:700, color: isGovt ? T.govtCol : T.text, letterSpacing:"1px" }}>{label}</span>
+                    <span style={{ fontSize:"12px", fontWeight:700, color:col.accent, letterSpacing:"1px" }}>{col.label}</span>
                     <span style={{ fontSize:"9px", color:T.text3 }}>{items.length}</span>
                   </div>
-                  {items.length === 0 && <div style={{ padding:"20px", textAlign:"center", fontSize:"10px", color:T.text3 }}>Fetching…</div>}
+                  {items.length===0 && <div style={{ padding:"20px", textAlign:"center", fontSize:"10px", color:T.text3 }}>Fetching…</div>}
                   {items.map(e => <StreamItem key={e.id} event={e} T={T} />)}
                 </div>
               );
@@ -657,56 +665,65 @@ function App() {
           </div>
         )}
 
-        {/* SINGLE REGION VIEWS */}
-        {(tab === "global" || tab === "australia" || tab === "nsw") && (
+        {/* GLOBAL */}
+        {tab === "global" && (
           <div>
-            {filtered(tab).map((e, i) => (
+            {getEvents("global", null).map((e,i) => (
               <div key={e.id} className="fu" style={{ animationDelay:`${Math.min(i,20)*0.025}s` }}>
                 <EventCard event={e} T={T} />
               </div>
             ))}
-            {filtered(tab).length === 0 && (
-              <div style={{ textAlign:"center", color:T.text3, padding:"60px 0", fontSize:"11px", letterSpacing:"2px" }}>NO EVENTS MATCH FILTERS</div>
-            )}
           </div>
         )}
 
-        {/* GOVERNMENT TAB */}
-        {tab === "government" && (
+        {/* AUSTRALIA — media + govt merged, govt items highlighted */}
+        {tab === "australia" && (
           <div>
-            <div style={{ display:"flex", gap:12, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
-              <div style={{ fontSize:"10px", color:T.govtCol, letterSpacing:"3px" }}>🏛️ AUSTRALIAN GOVERNMENT FEEDS</div>
+            {/* Legend */}
+            <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+              <span style={{ fontSize:"9px", color:T.text3, letterSpacing:"1px" }}>SOURCE KEY:</span>
+              {["Broadcast","Press","Wire","🏛️ Ministerial","🏛️ Parliament","🏛️ Department","🏛️ Advisory","🏛️ Regulatory"].map(t => {
+                const raw = t.replace("🏛️ ","");
+                const col = SOURCE_COLORS[raw] || "#888";
+                return <span key={t} style={{ fontSize:"8px", padding:"2px 6px", borderRadius:"2px", background:`${col}22`, border:`1px solid ${col}44`, color:col }}>{t}</span>;
+              })}
+            </div>
+            {getEvents("australia", null).map((e,i) => (
+              <div key={e.id} className="fu" style={{ animationDelay:`${Math.min(i,20)*0.025}s` }}>
+                <EventCard event={e} T={T} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* STATES */}
+        {tab === "states" && (
+          <div>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:"11px", color:T.stateCol, letterSpacing:"2px", marginBottom:4 }}>
+                {STATE_META[activeState]?.flag} {STATE_META[activeState]?.full} — fuel, energy & conflict-related updates
+              </div>
               <div style={{ fontSize:"9px", color:T.text3 }}>
-                Parliament · Ministerial · Departmental · Regulatory · Advisory
+                Items must explicitly reference {STATE_META[activeState]?.full} or its major cities, and relate to fuel/energy/conflict.
               </div>
             </div>
-            {/* Source legend */}
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
-              {["Parliament","Ministerial","Department","Regulatory","Advisory","Research","Aggregated"].map(type => (
-                <span key={type} style={{ fontSize:"9px", padding:"2px 8px", borderRadius:"2px",
-                  background:`${T.govtCol}15`, border:`1px solid ${T.govtCol}33`, color:T.govtCol }}>
-                  {type}
-                </span>
-              ))}
-            </div>
-            {filtered("government").map((e, i) => (
+            {getEvents(null, activeState).length === 0 && (
+              <div style={{ padding:"40px", textAlign:"center", fontSize:"10px", color:T.text3, border:`1px solid ${T.border}`, borderRadius:"3px" }}>
+                No state-specific items found yet for {STATE_META[activeState]?.full}. Fetching… ({countdown}s)
+              </div>
+            )}
+            {getEvents(null, activeState).map((e,i) => (
               <div key={e.id} className="fu" style={{ animationDelay:`${Math.min(i,20)*0.025}s` }}>
                 <EventCard event={e} T={T} />
               </div>
             ))}
-            {filtered("government").length === 0 && (
-              <div style={{ padding:"40px", textAlign:"center", fontSize:"10px", color:T.text3,
-                border:`1px solid ${T.border}`, borderRadius:"3px" }}>
-                Fetching government feeds… {countdown}s until next sync
-              </div>
-            )}
           </div>
         )}
 
-        {/* TIMELINE — all regions */}
+        {/* TIMELINE */}
         {tab === "timeline" && (
           <div>
-            {allEvents.filter(e => e.region !== "tactical").map((e, i) => (
+            {allEvents.filter(e => !e.state && e.region !== "tactical").map((e,i) => (
               <div key={e.id} className="fu" style={{ animationDelay:`${Math.min(i,20)*0.025}s` }}>
                 <EventCard event={e} T={T} />
               </div>
@@ -719,12 +736,12 @@ function App() {
           <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-start" }}>
             <div style={{ flex:"2", minWidth:"280px" }}>
               <div style={{ fontSize:"10px", color:T.text3, letterSpacing:"3px", marginBottom:10 }}>⚔️ LIVE TACTICAL FEED</div>
-              {liveEvents.filter(e => e.region === "tactical").length === 0 && (
+              {liveEvents.filter(e=>e.region==="tactical").length===0 && (
                 <div style={{ padding:"24px", textAlign:"center", fontSize:"10px", color:T.text3, border:`1px solid ${T.border}`, borderRadius:"3px" }}>
-                  Fetching tactical feeds… next sync in {countdown}s
+                  Fetching tactical feeds… {countdown}s
                 </div>
               )}
-              {liveEvents.filter(e => e.region === "tactical").map((e, i) => (
+              {liveEvents.filter(e=>e.region==="tactical").map((e,i) => (
                 <div key={e.id} className="fu" style={{ animationDelay:`${i*0.02}s` }}>
                   <EventCard event={e} T={T} />
                 </div>
@@ -733,9 +750,7 @@ function App() {
             <div style={{ flex:"1", minWidth:"220px" }}>
               <div style={{ fontSize:"10px", color:T.text3, letterSpacing:"3px", marginBottom:10 }}>🐦 ACCOUNTS TO MONITOR</div>
               <div style={{ border:`1px solid ${T.border}`, borderRadius:"3px", overflow:"hidden" }}>
-                <div style={{ padding:"8px 12px", background:T.bg2, borderBottom:`1px solid ${T.border}`, fontSize:"9px", color:T.text3, letterSpacing:"1px" }}>
-                  X / TWITTER — MANUAL MONITORING
-                </div>
+                <div style={{ padding:"8px 12px", background:T.bg2, borderBottom:`1px solid ${T.border}`, fontSize:"9px", color:T.text3, letterSpacing:"1px" }}>X / TWITTER — MANUAL MONITORING</div>
                 {TACTICAL_ACCOUNTS.map(acc => (
                   <div key={acc.handle} style={{ padding:"9px 12px", borderBottom:`1px solid ${T.border}` }}>
                     <a href={acc.url} target="_blank" rel="noopener noreferrer"
@@ -746,7 +761,7 @@ function App() {
                   </div>
                 ))}
                 <div style={{ padding:"10px 12px", background:T.bg2, fontSize:"9px", color:T.text3, lineHeight:1.7 }}>
-                  ⚠️ X/Twitter API requires a paid tier. Listed for manual monitoring. Future integration via Feedly Pro or a self-hosted Nitter proxy can automate this stream.
+                  ⚠️ X/Twitter API requires paid access. Listed for manual monitoring.
                 </div>
               </div>
             </div>
@@ -754,16 +769,16 @@ function App() {
         )}
       </div>
 
-      {/* ── FOOTER ── */}
+      {/* FOOTER */}
       <div style={{ borderTop:`1px solid ${T.border}`, padding:"12px 20px", background:T.bg2, display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <div style={{ fontSize:"8px", color:T.text3, letterSpacing:"1px", lineHeight:1.8 }}>
-          SOURCES: REUTERS · AP · BBC · AL JAZEERA · GUARDIAN · DW · FRANCE 24 · EURONEWS · FT · ABC · SMH · NEWS.COM.AU · 9NEWS · 7NEWS · PERTHNOW · THE WEST AUSTRALIAN<br/>
-          GOVT: APH SENATE · HOUSE · PARLINFO · FOREIGN AFFAIRS MIN · DEFENCE MIN · DFAT · SMARTRAVELLER · ACCC · DCCEEW · GOOGLE NEWS<br/>
-          TACTICAL: OILPRICE · IAEA · UN · CENTCOM · US DOD · AUTO-REFRESH 3MIN · ALL TIMES AEDT
+          GLOBAL: REUTERS · AP · BBC · AL JAZEERA · GUARDIAN · DW · FRANCE 24 · EURONEWS · FT · CFR<br/>
+          AUSTRALIA + GOV: ABC · SMH · NEWS.COM.AU · 9NEWS · 7NEWS · PERTHNOW · THE WEST AUSTRALIAN · DFAT · SMARTRAVELLER · DOD · ACCC · APH SENATE/HOUSE · FOREIGN AFFAIRS MIN · PM · ENERGY MIN<br/>
+          STATES: ABC STATE FEEDS · LOCAL PRESS · STATE GOV GOOGLE NEWS · TACTICAL: OILPRICE · IAEA · UN · CENTCOM · US DOD<br/>
+          AUTO-REFRESH 3MIN · ALL TIMES AEDT · MULTI-AGENCY USE
         </div>
         <div style={{ fontSize:"8px", color:T.text3, textAlign:"right", lineHeight:1.8 }}>
-          LIVE LIQUID FUELS NEWS FEED<br/>
-          IRAN US CONFLICT MONITOR · {new Date().getFullYear()}
+          LIVE LIQUID FUELS NEWS FEED<br/>IRAN US CONFLICT · {new Date().getFullYear()}
         </div>
       </div>
     </div>
