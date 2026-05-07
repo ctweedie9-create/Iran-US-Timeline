@@ -323,27 +323,28 @@ function SourceBadge({ type, isGovt, T }) {
 }
 
 function TimeStamp({ event, T }) {
-  if (event.pubDate) {
-    return (
-      <div style={{ textAlign:"right", minWidth:88 }}>
-        <div style={{ fontSize:"9px", color:T.text3, lineHeight:1.4 }}>
-          {formatDateShort(event.date)}
-        </div>
-        <div style={{ fontSize:"10px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>
-          {formatTimeOnly(event.pubDate)} AEDT
-        </div>
-        {event.live && (
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3, marginTop:1 }}>
-            <LiveDot color={T.liveCol} size={5} />
-            <span style={{ fontSize:"8px", color:T.liveCol, letterSpacing:"1px" }}>LIVE</span>
-          </div>
-        )}
-      </div>
-    );
-  }
+  // Always show date + time. Live items with pubDate get exact AEDT time.
+  // Historical events get date only (no time known).
+  const hasTime = !!event.pubDate;
+  const dateStr = formatDateShort(event.date);
+  const timeStr = hasTime ? formatTimeOnly(event.pubDate) : null;
+
   return (
-    <div style={{ textAlign:"right", minWidth:88 }}>
-      <div style={{ fontSize:"10px", color:T.text3 }}>{formatDateShort(event.date)}</div>
+    <div style={{ textAlign:"right", minWidth:94, flexShrink:0 }}>
+      <div style={{ fontSize:"10px", color:T.text3, lineHeight:1.5, whiteSpace:"nowrap" }}>
+        {dateStr}
+      </div>
+      {timeStr && (
+        <div style={{ fontSize:"10px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap", lineHeight:1.4 }}>
+          {timeStr} AEDT
+        </div>
+      )}
+      {event.live && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:3, marginTop:2 }}>
+          <LiveDot color={T.liveCol} size={5} />
+          <span style={{ fontSize:"8px", color:T.liveCol, letterSpacing:"1px" }}>LIVE</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -382,15 +383,15 @@ function EventCard({ event, T }) {
         </div>
         {/* Summary on expand */}
         {open && <div style={{ fontSize:"11px", color:T.text2, marginTop:4, lineHeight:1.6, marginBottom:6 }}>{event.summary}</div>}
-        {/* Source row — MORE VISIBLE */}
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginTop:2 }}>
+        {/* Source row — visible, clean */}
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginTop:4 }}>
           <SourceBadge type={event.type} isGovt={event.isGovt} T={T} />
           <span style={{ fontSize:"10px", color:T.text2, fontWeight:500 }}>{event.source}</span>
           {event.link && event.link !== "#" && (
             <a href={event.link} target="_blank" rel="noopener noreferrer"
               onClick={e=>e.stopPropagation()}
-              style={{ fontSize:"9px", color:T.accent, textDecoration:"none", marginLeft:"auto" }}>
-              → source ↗
+              style={{ fontSize:"9px", color:T.govtCol, textDecoration:"underline", marginLeft:"auto", letterSpacing:"0.5px" }}>
+              source
             </a>
           )}
         </div>
@@ -405,35 +406,39 @@ function StreamItem({ event, T }) {
   const isCrit = event.critical;
   const col = isCrit ? T.accent : isGovt ? T.govtCol : T.text;
   const srcCol = SOURCE_COLORS[event.type] || "#888";
+  const dateStr = formatDateShort(event.date);
+  const timeStr = event.pubDate ? formatTimeOnly(event.pubDate) : null;
 
   return (
     <div style={{ padding:"8px 10px", borderBottom:`1px solid ${T.streamBorder}`,
       background: isCrit?`${T.accent}0a` : isGovt?`${T.govtCol}07` : "transparent" }}>
+      {/* Date + time line */}
+      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+        {event.live && <LiveDot color={isGovt?T.govtCol:T.liveCol} size={5} />}
+        <span style={{ fontSize:"9px", color:T.text3, whiteSpace:"nowrap" }}>{dateStr}</span>
+        {timeStr && (
+          <span style={{ fontSize:"9px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>
+            {timeStr} AEDT
+          </span>
+        )}
+      </div>
       {/* Headline */}
-      <div style={{ display:"flex", alignItems:"flex-start", gap:5, marginBottom:4 }}>
-        {event.live && <LiveDot color={isGovt?T.govtCol:T.liveCol} size={6} />}
-        <div style={{ fontSize:"11px", fontWeight:600, color:col, lineHeight:1.4 }}>
-          {event.title}
-        </div>
+      <div style={{ fontSize:"11px", fontWeight:600, color:col, lineHeight:1.4, marginBottom:5 }}>
+        {event.title}
       </div>
       {/* Source row */}
       <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-        {/* Time */}
-        {event.pubDate
-          ? <span style={{ fontSize:"9px", color:T.timeCol, fontWeight:600, whiteSpace:"nowrap" }}>{formatTimeOnly(event.pubDate)} AEDT</span>
-          : <span style={{ fontSize:"9px", color:T.text3 }}>{formatDateShort(event.date)}</span>
-        }
-        {/* Source type pill */}
         <span style={{ fontSize:"8px", padding:"1px 4px", borderRadius:"2px",
           background:`${srcCol}22`, border:`1px solid ${srcCol}44`, color:srcCol,
           fontWeight:600, whiteSpace:"nowrap" }}>
           {isGovt?"🏛️ ":""}{event.type}
         </span>
-        {/* Source name */}
         <span style={{ fontSize:"9px", color:T.text2, fontWeight:500 }}>{event.source}</span>
         {event.link && event.link !== "#" && (
           <a href={event.link} target="_blank" rel="noopener noreferrer"
-            style={{ fontSize:"9px", color:T.accent, textDecoration:"none", marginLeft:"auto" }}>↗</a>
+            style={{ fontSize:"9px", color:T.govtCol, textDecoration:"underline", marginLeft:"auto", letterSpacing:"0.5px" }}>
+            source
+          </a>
         )}
       </div>
     </div>
@@ -494,16 +499,24 @@ function App() {
     return () => { clearInterval(timerRef.current); clearInterval(cdRef.current); };
   }, [fetchAll]);
 
-  const allEvents = [...liveEvents, ...HISTORY].sort((a,b) => {
-    const da = a.pubDate || new Date(a.date);
-    const db = b.pubDate || new Date(b.date);
-    return db - da;
+  // Keep live items up to 7 days old; always keep all HISTORY entries
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const recentLive = liveEvents.filter(e => {
+    const age = nowMs - (e.pubDate ? e.pubDate.getTime() : 0);
+    return age < ONE_WEEK_MS;
+  });
+
+  const allEvents = [...recentLive, ...HISTORY].sort((a,b) => {
+    const da = a.pubDate ? a.pubDate.getTime() : new Date(a.date).getTime();
+    const db = b.pubDate ? b.pubDate.getTime() : new Date(b.date).getTime();
+    return db - da; // newest first — strict chronological descending
   });
 
   function getEvents(region, state) {
     return allEvents.filter(e => {
-      if (state)   return e.state === state;
-      if (region)  return e.region === region && !e.state;
+      if (state)  return e.state === state;
+      if (region) return e.region === region && !e.state;
       return true;
     }).filter(e => {
       if (!search) return true;
